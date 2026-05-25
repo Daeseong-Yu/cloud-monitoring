@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "resources": [
+    {
+      "key": "primary-ec2",
+      "serviceName": "ec2",
+      "resourceIdEnv": "TARGET_INSTANCE_ID",
+      "regionEnv": "AWS_REGION"
+    }
+  ],
+  "metricSets": [
+    {
+      "name": "ec2-default",
+      "metrics": [
+        {
+          "namespace": "AWS/EC2",
+          "metricName": "CPUUtilization",
+          "statistic": "Average",
+          "periodSeconds": 300,
+          "unit": "Percent"
+        },
+        {
+          "namespace": "AWS/EC2",
+          "metricName": "NetworkIn",
+          "statistic": "Sum",
+          "periodSeconds": 300,
+          "unit": "Bytes"
+        },
+        {
+          "namespace": "AWS/EC2",
+          "metricName": "NetworkOut",
+          "statistic": "Sum",
+          "periodSeconds": 300,
+          "unit": "Bytes"
+        },
+        {
+          "namespace": "AWS/EC2",
+          "metricName": "StatusCheckFailed",
+          "statistic": "Maximum",
+          "periodSeconds": 300,
+          "unit": "Count"
+        },
+        {
+          "serviceName": "cwagent",
+          "namespace": "CWAgent",
+          "metricName": "mem_used_percent",
+          "statistic": "Average",
+          "periodSeconds": 300,
+          "unit": "Percent"
+        },
+        {
+          "serviceName": "cwagent",
+          "namespace": "CWAgent",
+          "metricName": "disk_used_percent",
+          "statistic": "Average",
+          "periodSeconds": 300,
+          "unit": "Percent"
+        }
+      ]
+    }
+  ],
+  "bindings": [
+    {
+      "resourceKey": "primary-ec2",
+      "metricSet": "ec2-default",
+      "enabled": true
+    }
+  ]
+}
