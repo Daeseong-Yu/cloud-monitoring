@@ -17,6 +17,7 @@ const (
 
 type Config struct {
 	AWSRegion             string
+	DatabaseURL           string
 	CollectorInterval     time.Duration
 	CloudWatchLookback    time.Duration
 	GrafanaRefresh        time.Duration
@@ -26,13 +27,14 @@ type Config struct {
 
 func LoadFromEnv() (Config, error) {
 	cfg := Config{
-		AWSRegion:             strings.TrimSpace(os.Getenv("AWS_REGION")),
-		CollectorInterval:     time.Duration(getenvInt("COLLECTOR_INTERVAL_SECONDS", defaultCollectorIntervalSeconds)) * time.Second,
-		CloudWatchLookback:    time.Duration(getenvInt("CLOUDWATCH_LOOKBACK_MINUTES", defaultCloudWatchLookbackMin)) * time.Minute,
-		GrafanaRefresh:        time.Duration(getenvInt("GRAFANA_REFRESH_MINUTES", defaultGrafanaRefreshMin)) * time.Minute,
-		MetricRetentionDays:   getenvInt("METRIC_RETENTION_DAYS", defaultMetricRetentionDays),
-		DatabaseURLConfigured: os.Getenv("DATABASE_URL") != "",
+		AWSRegion:           strings.TrimSpace(os.Getenv("AWS_REGION")),
+		DatabaseURL:         strings.TrimSpace(os.Getenv("DATABASE_URL")),
+		CollectorInterval:   time.Duration(getenvInt("COLLECTOR_INTERVAL_SECONDS", defaultCollectorIntervalSeconds)) * time.Second,
+		CloudWatchLookback:  time.Duration(getenvInt("CLOUDWATCH_LOOKBACK_MINUTES", defaultCloudWatchLookbackMin)) * time.Minute,
+		GrafanaRefresh:      time.Duration(getenvInt("GRAFANA_REFRESH_MINUTES", defaultGrafanaRefreshMin)) * time.Minute,
+		MetricRetentionDays: getenvInt("METRIC_RETENTION_DAYS", defaultMetricRetentionDays),
 	}
+	cfg.DatabaseURLConfigured = cfg.DatabaseURL != ""
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
