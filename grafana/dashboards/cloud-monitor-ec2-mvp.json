@@ -1,0 +1,538 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'CPUUtilization'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 CPU Utilization",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'mem_used_percent'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Memory Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'disk_used_percent'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Disk Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'NetworkIn'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Network In",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'NetworkOut'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Network Out",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "lineInterpolation": "stepAfter",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'StatusCheckFailed'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Status Check Failed",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    md.metric_name,\n    md.resource_id,\n    md.region,\n    count(mp.id) AS points\nFROM metric_definitions md\nLEFT JOIN metric_points mp\n    ON mp.metric_definition_id = md.id\n    AND $__timeFilter(mp.timestamp)\nWHERE\n    md.enabled = TRUE\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\nGROUP BY md.metric_name, md.resource_id, md.region\nORDER BY md.metric_name;",
+          "refId": "A"
+        }
+      ],
+      "title": "Metric Point Coverage",
+      "type": "table"
+    }
+  ],
+  "refresh": "10m",
+  "schemaVersion": 39,
+  "tags": [
+    "cloud-monitor",
+    "postgresql"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "cloud-monitor-postgres"
+        },
+        "definition": "SELECT DISTINCT region AS __text, region AS __value FROM metric_definitions WHERE enabled = TRUE ORDER BY region;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Region",
+        "multi": false,
+        "name": "region",
+        "options": [],
+        "query": "SELECT DISTINCT region AS __text, region AS __value FROM metric_definitions WHERE enabled = TRUE ORDER BY region;",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "cloud-monitor-postgres"
+        },
+        "definition": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND region = ${region:sqlstring} ORDER BY resource_id;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Resource",
+        "multi": false,
+        "name": "resource_id",
+        "options": [],
+        "query": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND region = ${region:sqlstring} ORDER BY resource_id;",
+        "refresh": 1,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Cloud Monitor EC2 MVP",
+  "uid": "cloud-monitor-ec2-mvp",
+  "version": 1,
+  "weekStart": ""
+}

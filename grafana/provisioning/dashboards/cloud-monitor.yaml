@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: Cloud Monitor
+    orgId: 1
+    folder: Cloud Monitor
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 600
+    options:
+      path: /etc/grafana/provisioning/dashboards/cloud-monitor
