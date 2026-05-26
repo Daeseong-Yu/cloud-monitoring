@@ -35,9 +35,11 @@ openssh_word='O''PENSSH'
 arn_prefix='arn'':aws'
 pattern="${aws_key}|${secret_word}|BEGIN (RSA|${openssh_word}|${private_word})|${arn_prefix}|[0-9]{12}|i-[0-9a-f]{8,}"
 
-if grep -R -E "$pattern" .ai README.md .env.example aws configs db scripts internal cmd >/dev/null; then
+if grep -R --exclude scan-secrets.sh -E "$pattern" .ai README.md .env.example aws configs db scripts internal cmd >/dev/null; then
   echo "민감 정보로 보이는 패턴이 발견되었습니다." >&2
   exit 1
 fi
+
+sh scripts/scan-secrets.sh .ai README.md .env.example aws configs db scripts internal cmd
 
 echo "step3 validation passed"

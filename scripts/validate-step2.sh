@@ -55,4 +55,6 @@ if grep -R -E "$pattern" .ai README.md .env.example aws "$verify_script" >/dev/n
   exit 1
 fi
 
+sh scripts/scan-secrets.sh .ai README.md .env.example aws "$verify_script"
+
 echo "step2 validation passed"

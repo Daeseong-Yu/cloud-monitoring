@@ -17,4 +17,6 @@ if grep -R -E "$pattern" .ai README.md .env.example >/dev/null; then
   exit 1
 fi
 
+sh scripts/scan-secrets.sh .ai README.md .env.example
+
 echo "step1 validation passed"
