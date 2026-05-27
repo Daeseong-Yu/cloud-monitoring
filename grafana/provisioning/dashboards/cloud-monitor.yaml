@@ -9,4 +9,4 @@ providers:
     allowUiUpdates: false
     updateIntervalSeconds: 600
     options:
-      path: /etc/grafana/provisioning/dashboards/cloud-monitor
+      path: /var/lib/grafana/dashboards/cloud-monitor
