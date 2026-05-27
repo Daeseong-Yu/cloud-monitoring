@@ -81,7 +81,7 @@ wait_for_service_health postgres 60
 wait_for_service_health grafana 60
 
 docker compose --profile setup run --rm schema
-docker compose --profile setup run --rm metricdefs-sync -config /app/configs/metric-definitions.example.json -dry-run >/dev/null
+docker compose --profile setup run --rm metricdefs-sync /app/metricdefs-sync -config /app/configs/metric-definitions.example.json -dry-run >/dev/null
 
 GRAFANA_URL="$grafana_url" sh scripts/verify-grafana-health.sh
 check_admin_unauthenticated
@@ -93,7 +93,7 @@ else
 fi
 
 if has_aws_credentials; then
-  docker compose --profile discovery run --rm resource-discovery -dry-run >/dev/null
+  docker compose --profile discovery run --rm resource-discovery /app/resource-discovery -dry-run >/dev/null
   docker compose --profile collector run --rm collector /app/collector --once
 else
   echo "AWS credentials are not set; running infra-only mode"

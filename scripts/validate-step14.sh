@@ -24,9 +24,9 @@ grep -q 'verify-db-health.sh' scripts/smoke-compose.sh
 grep -q 'expected 401' scripts/smoke-compose.sh
 grep -q 'SLACK_WEBHOOK_URL=' scripts/smoke-compose.sh
 grep -q 'infra-only mode' scripts/smoke-compose.sh
-grep -q 'resource-discovery -dry-run' scripts/smoke-compose.sh
+grep -q '/app/resource-discovery -dry-run' scripts/smoke-compose.sh
 grep -q '/app/collector --once' scripts/smoke-compose.sh
-grep -q 'metricdefs-sync.*-dry-run' scripts/smoke-compose.sh
+grep -q '/app/metricdefs-sync.*-dry-run' scripts/smoke-compose.sh
 
 if grep -E 'docker compose .*down.*-v|docker volume rm|rm -rf' scripts/smoke-compose.sh >/dev/null; then
   echo "smoke-compose.sh must not delete compose volumes or perform destructive cleanup" >&2
