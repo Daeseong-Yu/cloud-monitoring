@@ -40,6 +40,6 @@ if grep -R --exclude scan-secrets.sh -E "$pattern" .ai README.md .env.example aw
   exit 1
 fi
 
-sh scripts/scan-secrets.sh .ai README.md .env.example aws configs db scripts internal cmd
+sh scripts/validate-common.sh
 
 echo "step3 validation passed"

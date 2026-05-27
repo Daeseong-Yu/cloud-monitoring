@@ -32,6 +32,8 @@ if grep -R -i 'cloudwatch\|logs' grafana >/dev/null; then
   exit 1
 fi
 
-sh scripts/scan-secrets.sh .ai README.md .env.example aws configs db scripts internal cmd grafana docs
+if [ "${SKIP_COMMON_VALIDATION:-0}" != "1" ]; then
+  sh scripts/validate-common.sh
+fi
 
 echo "public dashboard validation passed"

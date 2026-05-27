@@ -14,8 +14,6 @@ grep -q 'enabled = TRUE' internal/store/store.go
 grep -q 'AND region = $1' internal/store/store.go
 grep -q 'sanitize.Message' cmd/collector/main.go
 
-GOCACHE=/Users/09mac/project/cloud-monitor/.cache/go-build /usr/local/go/bin/go test ./...
-
-sh scripts/scan-secrets.sh .ai README.md .env.example aws configs db scripts internal cmd
+sh scripts/validate-common.sh
 
 echo "step4 validation passed"

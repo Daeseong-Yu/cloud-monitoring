@@ -60,6 +60,6 @@ if grep -R -i 'type:[[:space:]]*cloudwatch\|"type":[[:space:]]*"cloudwatch"\|dat
   exit 1
 fi
 
-sh scripts/scan-secrets.sh .ai README.md .env.example aws configs db scripts internal cmd grafana
+sh scripts/validate-common.sh
 
 echo "step5 validation passed"
