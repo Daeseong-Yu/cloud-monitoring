@@ -36,6 +36,55 @@ type MetricPoint struct {
 	Value              float64
 }
 
+type AdminResource struct {
+	ID                int64  `json:"id"`
+	ServiceName       string `json:"serviceName"`
+	Namespace         string `json:"namespace"`
+	ResourceID        string `json:"resourceId"`
+	Region            string `json:"region"`
+	DisplayName       string `json:"displayName"`
+	TagsJSON          string `json:"tags"`
+	Enabled           bool   `json:"enabled"`
+	DiscoveredMetrics int64  `json:"discoveredMetrics"`
+	SelectedMetrics   int64  `json:"selectedMetrics"`
+	MetricDefinitions int64  `json:"metricDefinitions"`
+}
+
+type AdminMetricDefinition struct {
+	ID             int64  `json:"id"`
+	ServiceName    string `json:"serviceName"`
+	Namespace      string `json:"namespace"`
+	MetricName     string `json:"metricName"`
+	ResourceID     string `json:"resourceId"`
+	Region         string `json:"region"`
+	DimensionsJSON string `json:"dimensions"`
+	Statistic      string `json:"statistic"`
+	PeriodSeconds  int32  `json:"periodSeconds"`
+	Unit           string `json:"unit"`
+	Enabled        bool   `json:"enabled"`
+}
+
+type MetricDefinitionInput struct {
+	ID             int64  `json:"id"`
+	ServiceName    string `json:"serviceName"`
+	Namespace      string `json:"namespace"`
+	MetricName     string `json:"metricName"`
+	ResourceID     string `json:"resourceId"`
+	Region         string `json:"region"`
+	DimensionsJSON string `json:"dimensions"`
+	Statistic      string `json:"statistic"`
+	PeriodSeconds  int32  `json:"periodSeconds"`
+	Unit           string `json:"unit"`
+	Enabled        bool   `json:"enabled"`
+}
+
+type RecommendedMetric struct {
+	MetricName    string `json:"metricName"`
+	Statistic     string `json:"statistic"`
+	PeriodSeconds int32  `json:"periodSeconds"`
+	Unit          string `json:"unit"`
+}
+
 type Store struct {
 	pool *pgxpool.Pool
 }
@@ -133,6 +182,260 @@ ON CONFLICT ON CONSTRAINT metric_points_unique_point DO NOTHING`,
 		return 0, fmt.Errorf("commit metric point insert: %w", err)
 	}
 	return inserted, nil
+}
+
+func (s *Store) ListAdminResources(ctx context.Context, region string) ([]AdminResource, error) {
+	const query = `
+SELECT
+    r.id,
+    r.service_name,
+    r.namespace,
+    r.resource_id,
+    r.region,
+    r.display_name,
+    r.tags::text,
+    r.enabled,
+    COUNT(DISTINCT dm.id) AS discovered_metrics,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.selected = TRUE) AS selected_metrics,
+    COUNT(DISTINCT md.id) AS metric_definitions
+FROM resources r
+LEFT JOIN discovered_metrics dm ON dm.resource_id = r.id
+LEFT JOIN metric_definitions md
+    ON md.resource_id = r.resource_id
+    AND md.region = r.region
+WHERE ($1 = '' OR r.region = $1)
+GROUP BY r.id
+ORDER BY r.region, r.service_name, r.display_name, r.resource_id`
+
+	rows, err := s.pool.Query(ctx, query, region)
+	if err != nil {
+		return nil, fmt.Errorf("query admin resources: %w", err)
+	}
+	defer rows.Close()
+
+	resources, err := pgx.CollectRows(rows, pgx.RowToStructByPos[AdminResource])
+	if err != nil {
+		return nil, fmt.Errorf("scan admin resources: %w", err)
+	}
+	return resources, nil
+}
+
+func (s *Store) SetResourceEnabled(ctx context.Context, id int64, enabled bool) error {
+	tag, err := s.pool.Exec(ctx, `
+UPDATE resources
+SET enabled = $2, updated_at = now()
+WHERE id = $1`, id, enabled)
+	if err != nil {
+		return fmt.Errorf("update resource enabled: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("resource not found")
+	}
+	return nil
+}
+
+func (s *Store) ListAdminMetricDefinitions(ctx context.Context, region string) ([]AdminMetricDefinition, error) {
+	const query = `
+SELECT
+    id,
+    service_name,
+    namespace,
+    metric_name,
+    resource_id,
+    region,
+    COALESCE(dimensions, '[]'::jsonb)::text,
+    statistic,
+    period_seconds,
+    COALESCE(unit, ''),
+    enabled
+FROM metric_definitions
+WHERE ($1 = '' OR region = $1)
+ORDER BY region, resource_id, namespace, metric_name, statistic, period_seconds`
+
+	rows, err := s.pool.Query(ctx, query, region)
+	if err != nil {
+		return nil, fmt.Errorf("query admin metric definitions: %w", err)
+	}
+	defer rows.Close()
+
+	definitions, err := pgx.CollectRows(rows, pgx.RowToStructByPos[AdminMetricDefinition])
+	if err != nil {
+		return nil, fmt.Errorf("scan admin metric definitions: %w", err)
+	}
+	return definitions, nil
+}
+
+func (s *Store) UpsertMetricDefinition(ctx context.Context, input MetricDefinitionInput) (int64, error) {
+	dimensionsJSON := input.DimensionsJSON
+	if dimensionsJSON == "" {
+		dimensionsJSON = "[]"
+	}
+
+	if input.ID > 0 {
+		tag, err := s.pool.Exec(ctx, `
+UPDATE metric_definitions
+SET service_name = $2,
+    namespace = $3,
+    metric_name = $4,
+    resource_id = $5,
+    region = $6,
+    dimensions = $7::jsonb,
+    statistic = $8,
+    period_seconds = $9,
+    unit = $10,
+    enabled = $11,
+    updated_at = now()
+WHERE id = $1`,
+			input.ID,
+			input.ServiceName,
+			input.Namespace,
+			input.MetricName,
+			input.ResourceID,
+			input.Region,
+			dimensionsJSON,
+			input.Statistic,
+			input.PeriodSeconds,
+			input.Unit,
+			input.Enabled,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("update metric definition: %w", err)
+		}
+		if tag.RowsAffected() == 0 {
+			return 0, fmt.Errorf("metric definition not found")
+		}
+		return input.ID, nil
+	}
+
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+INSERT INTO metric_definitions (service_name, namespace, metric_name, resource_id, region, dimensions, statistic, period_seconds, unit, enabled)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+ON CONFLICT ON CONSTRAINT metric_definitions_unique_metric DO UPDATE SET
+    service_name = EXCLUDED.service_name,
+    dimensions = EXCLUDED.dimensions,
+    unit = EXCLUDED.unit,
+    enabled = EXCLUDED.enabled,
+    updated_at = now()
+RETURNING id`,
+		input.ServiceName,
+		input.Namespace,
+		input.MetricName,
+		input.ResourceID,
+		input.Region,
+		dimensionsJSON,
+		input.Statistic,
+		input.PeriodSeconds,
+		input.Unit,
+		input.Enabled,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("upsert metric definition: %w", err)
+	}
+	return id, nil
+}
+
+func (s *Store) SetMetricDefinitionEnabled(ctx context.Context, id int64, enabled bool) error {
+	tag, err := s.pool.Exec(ctx, `
+UPDATE metric_definitions
+SET enabled = $2, updated_at = now()
+WHERE id = $1`, id, enabled)
+	if err != nil {
+		return fmt.Errorf("update metric definition enabled: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("metric definition not found")
+	}
+	return nil
+}
+
+func (s *Store) DeleteMetricDefinition(ctx context.Context, id int64) error {
+	tag, err := s.pool.Exec(ctx, "DELETE FROM metric_definitions WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("delete metric definition: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("metric definition not found")
+	}
+	return nil
+}
+
+func (s *Store) ApplyRecommendedMetricSet(ctx context.Context, resourceRowID int64, metrics []RecommendedMetric) (int64, error) {
+	var resource AdminResource
+	err := s.pool.QueryRow(ctx, `
+SELECT id, service_name, namespace, resource_id, region, display_name, tags::text, enabled, 0::bigint, 0::bigint, 0::bigint
+FROM resources
+WHERE id = $1`, resourceRowID).Scan(
+		&resource.ID,
+		&resource.ServiceName,
+		&resource.Namespace,
+		&resource.ResourceID,
+		&resource.Region,
+		&resource.DisplayName,
+		&resource.TagsJSON,
+		&resource.Enabled,
+		&resource.DiscoveredMetrics,
+		&resource.SelectedMetrics,
+		&resource.MetricDefinitions,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("query resource for metric set: %w", err)
+	}
+
+	var applied int64
+	for _, metric := range metrics {
+		dimensionsJSON, err := s.dimensionsForDiscoveredMetric(ctx, resourceRowID, metric.MetricName)
+		if err != nil {
+			return 0, err
+		}
+		if dimensionsJSON == "" {
+			dimensionsJSON = fallbackDimensionsJSON(resource.ServiceName, resource.ResourceID)
+		}
+		_, err = s.UpsertMetricDefinition(ctx, MetricDefinitionInput{
+			ServiceName:    resource.ServiceName,
+			Namespace:      resource.Namespace,
+			MetricName:     metric.MetricName,
+			ResourceID:     resource.ResourceID,
+			Region:         resource.Region,
+			DimensionsJSON: dimensionsJSON,
+			Statistic:      metric.Statistic,
+			PeriodSeconds:  metric.PeriodSeconds,
+			Unit:           metric.Unit,
+			Enabled:        true,
+		})
+		if err != nil {
+			return 0, err
+		}
+		applied++
+	}
+	return applied, nil
+}
+
+func (s *Store) dimensionsForDiscoveredMetric(ctx context.Context, resourceRowID int64, metricName string) (string, error) {
+	var dimensionsJSON string
+	err := s.pool.QueryRow(ctx, `
+SELECT dimensions::text
+FROM discovered_metrics
+WHERE resource_id = $1
+  AND metric_name = $2
+ORDER BY discovered_at DESC
+LIMIT 1`, resourceRowID, metricName).Scan(&dimensionsJSON)
+	if err == pgx.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("query discovered metric dimensions: %w", err)
+	}
+	return dimensionsJSON, nil
+}
+
+func fallbackDimensionsJSON(serviceName string, resourceID string) string {
+	name := "InstanceId"
+	if serviceName == "lambda" {
+		name = "FunctionName"
+	}
+	data, _ := json.Marshal([]Dimension{{Name: name, Value: resourceID}})
+	return string(data)
 }
 
 func (s *Store) UpsertDiscoveredResources(ctx context.Context, resources []discovery.Resource) (int64, int64, error) {

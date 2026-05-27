@@ -6,6 +6,7 @@ go_cache="${GOCACHE:-/Users/09mac/project/cloud-monitor/.cache/go-build}"
 jq . \
   .ai/phases/index.json \
   .ai/phases/cloud-monitor/index.json \
+  .ai/phases/cloud-monitor-post-mvp/index.json \
   configs/metric-definitions.example.json \
   configs/recommended-metric-sets.json \
   aws/iam/collector-readonly-policy.json \
