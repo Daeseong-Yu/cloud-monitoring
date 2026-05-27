@@ -2,6 +2,7 @@ package cloudwatchmetrics
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -33,20 +34,73 @@ func (f Fetcher) Fetch(ctx context.Context, definitions []store.MetricDefinition
 	}
 
 	var points []store.MetricPoint
+	var skippedDefinitions int
+	var failures []error
 	for start := 0; start < len(definitions); start += maxMetricDataQueries {
 		end := start + maxMetricDataQueries
 		if end > len(definitions) {
 			end = len(definitions)
 		}
 
-		batchPoints, err := f.fetchBatch(ctx, definitions[start:end], startTime, endTime)
+		batchPoints, skipped, err := f.fetchBatchTolerant(ctx, definitions[start:end], startTime, endTime)
+		skippedDefinitions += skipped
 		if err != nil {
-			return nil, err
+			failures = append(failures, err)
 		}
 		points = append(points, batchPoints...)
 	}
 
+	if len(failures) > 0 {
+		return points, PartialFailure{
+			Skipped: skippedDefinitions,
+			Cause:   errors.Join(failures...),
+		}
+	}
 	return points, nil
+}
+
+type PartialFailure struct {
+	Skipped int
+	Cause   error
+}
+
+func (e PartialFailure) Error() string {
+	return fmt.Sprintf("partial cloudwatch metric fetch failure: skipped_definitions=%d", e.Skipped)
+}
+
+func (e PartialFailure) Unwrap() error {
+	return e.Cause
+}
+
+func (e PartialFailure) SkippedDefinitions() int {
+	return e.Skipped
+}
+
+func (f Fetcher) fetchBatchTolerant(ctx context.Context, definitions []store.MetricDefinition, startTime time.Time, endTime time.Time) ([]store.MetricPoint, int, error) {
+	points, err := f.fetchBatch(ctx, definitions, startTime, endTime)
+	if err == nil {
+		return points, 0, nil
+	}
+	if len(definitions) <= 1 {
+		return nil, len(definitions), err
+	}
+
+	var allPoints []store.MetricPoint
+	var skipped int
+	var failures []error
+	for _, definition := range definitions {
+		points, err := f.fetchBatch(ctx, []store.MetricDefinition{definition}, startTime, endTime)
+		if err != nil {
+			skipped++
+			failures = append(failures, err)
+			continue
+		}
+		allPoints = append(allPoints, points...)
+	}
+	if len(failures) > 0 {
+		return allPoints, skipped, errors.Join(failures...)
+	}
+	return allPoints, 0, nil
 }
 
 func (f Fetcher) fetchBatch(ctx context.Context, definitions []store.MetricDefinition, startTime time.Time, endTime time.Time) ([]store.MetricPoint, error) {

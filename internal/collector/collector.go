@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -28,11 +29,17 @@ type Collector struct {
 }
 
 type RunResult struct {
-	Definitions int
-	Fetched     int
-	Inserted    int64
-	StartTime   time.Time
-	EndTime     time.Time
+	Definitions        int
+	SkippedDefinitions int
+	Fetched            int
+	Inserted           int64
+	StartTime          time.Time
+	EndTime            time.Time
+}
+
+type partialFetchError interface {
+	error
+	SkippedDefinitions() int
 }
 
 func New(cfg config.Config, store DefinitionStore, fetcher MetricFetcher, log io.Writer) Collector {
@@ -58,8 +65,14 @@ func (c Collector) CollectOnce(ctx context.Context) (RunResult, error) {
 	}
 
 	points, err := c.fetcher.Fetch(ctx, definitions, startTime, endTime)
+	skipped := 0
 	if err != nil {
-		return RunResult{}, fmt.Errorf("fetch metric data: %w", err)
+		var partial partialFetchError
+		if !errors.As(err, &partial) {
+			return RunResult{}, fmt.Errorf("fetch metric data: %w", err)
+		}
+		skipped = partial.SkippedDefinitions()
+		fmt.Fprintf(c.log, "collector partial metric fetch failure: skipped_definitions=%d\n", skipped)
 	}
 
 	inserted, err := c.store.InsertMetricPoints(ctx, points)
@@ -68,11 +81,12 @@ func (c Collector) CollectOnce(ctx context.Context) (RunResult, error) {
 	}
 
 	return RunResult{
-		Definitions: len(definitions),
-		Fetched:     len(points),
-		Inserted:    inserted,
-		StartTime:   startTime,
-		EndTime:     endTime,
+		Definitions:        len(definitions),
+		SkippedDefinitions: skipped,
+		Fetched:            len(points),
+		Inserted:           inserted,
+		StartTime:          startTime,
+		EndTime:            endTime,
 	}, nil
 }
 

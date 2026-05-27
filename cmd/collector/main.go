@@ -10,7 +10,6 @@ import (
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 
 	"cloud-monitor/internal/cloudwatchmetrics"
 	"cloud-monitor/internal/collector"
@@ -43,13 +42,14 @@ func main() {
 	}
 	defer db.Close()
 
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.AWSRegion))
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "collector AWS configuration error: %s\n", sanitize.Message(err.Error(), cfg.DatabaseURL))
 		os.Exit(1)
 	}
 
-	metricFetcher := cloudwatchmetrics.NewFetcher(cloudwatch.NewFromConfig(awsCfg))
+	clientFactory := cloudwatchmetrics.NewRegionClientFactory(awsCfg)
+	metricFetcher := clientFactory.FetcherForRegion(cfg.AWSRegion)
 	runner := collector.New(cfg, db, metricFetcher, os.Stderr)
 
 	fmt.Printf("cloud-monitor collector ready: region=%s interval=%s lookback=%s retention_days=%d\n", cfg.AWSRegion, cfg.CollectorInterval, cfg.CloudWatchLookback, cfg.MetricRetentionDays)
@@ -86,8 +86,9 @@ func main() {
 
 func printResult(result collector.RunResult) {
 	fmt.Printf(
-		"collector cycle completed: definitions=%d fetched=%d inserted=%d window_start=%s window_end=%s\n",
+		"collector cycle completed: definitions=%d skipped_definitions=%d fetched=%d inserted=%d window_start=%s window_end=%s\n",
 		result.Definitions,
+		result.SkippedDefinitions,
 		result.Fetched,
 		result.Inserted,
 		result.StartTime.Format(time.RFC3339),
