@@ -11,7 +11,10 @@ jq . \
   configs/recommended-metric-sets.json \
   aws/iam/collector-readonly-policy.json \
   aws/iam/discovery-readonly-policy.json \
-  grafana/dashboards/cloud-monitor-ec2-mvp.json >/dev/null
+  grafana/dashboards/cloud-monitor-ec2-mvp.json \
+  grafana/dashboards/cloud-monitor-lambda.json \
+  grafana/dashboards/cloud-monitor-aws-resource.json \
+  grafana/dashboards/cloud-monitor-postgres-ops.json >/dev/null
 
 GOCACHE="$go_cache" /usr/local/go/bin/go test ./...
 

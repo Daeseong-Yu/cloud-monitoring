@@ -1,0 +1,145 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT\n    now() AS \"time\",\n    pg_database_size(current_database())::double precision AS value,\n    current_database() AS metric;",
+          "refId": "A"
+        }
+      ],
+      "title": "Database Size",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT\n    schemaname || '.' || relname AS table_name,\n    pg_total_relation_size(quote_ident(schemaname) || '.' || quote_ident(relname)) AS total_bytes\nFROM pg_stat_user_tables\nWHERE schemaname = 'public'\nORDER BY total_bytes DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Table Size",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "id": 3,
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "format": "table",
+          "rawSql": "SELECT\n    md.region,\n    md.namespace,\n    count(DISTINCT md.resource_id) AS resources,\n    count(DISTINCT md.id) AS definitions,\n    count(mp.id) AS points\nFROM metric_definitions md\nLEFT JOIN metric_points mp\n    ON mp.metric_definition_id = md.id\n    AND $__timeFilter(mp.timestamp)\nGROUP BY md.region, md.namespace\nORDER BY md.region, md.namespace;",
+          "refId": "A"
+        }
+      ],
+      "title": "Metric Storage Summary",
+      "type": "table"
+    }
+  ],
+  "refresh": "10m",
+  "schemaVersion": 39,
+  "tags": [
+    "cloud-monitor",
+    "postgres"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timezone": "",
+  "title": "Cloud Monitor PostgreSQL Ops",
+  "uid": "cloud-monitor-postgres-ops",
+  "version": 1,
+  "weekStart": ""
+}
