@@ -1,0 +1,10 @@
+[Unit]
+Description=Cloud Monitor summary rollup
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/cloud-monitor
+EnvironmentFile=/etc/cloud-monitor/cloud-monitor.env
+ExecStart=/usr/bin/docker compose --profile jobs run --rm summary-rollup

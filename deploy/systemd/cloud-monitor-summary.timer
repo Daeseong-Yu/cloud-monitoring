@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Cloud Monitor summary rollup hourly
+
+[Timer]
+OnCalendar=hourly
+AccuracySec=1min
+Unit=cloud-monitor-summary.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

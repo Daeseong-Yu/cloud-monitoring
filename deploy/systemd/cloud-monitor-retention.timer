@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Cloud Monitor metric retention daily
+
+[Timer]
+OnCalendar=daily
+AccuracySec=5min
+Unit=cloud-monitor-retention.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target
