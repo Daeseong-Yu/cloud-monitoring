@@ -10,7 +10,6 @@ func TestValidateAcceptsMVPDefaults(t *testing.T) {
 		AWSRegion:           "us-east-1",
 		CollectorInterval:   time.Minute,
 		CloudWatchLookback:  15 * time.Minute,
-		GrafanaRefresh:      10 * time.Minute,
 		MetricRetentionDays: 30,
 	}
 
@@ -24,26 +23,11 @@ func TestValidateRejectsCollectorIntervalBelowOneMinute(t *testing.T) {
 		AWSRegion:           "us-east-1",
 		CollectorInterval:   30 * time.Second,
 		CloudWatchLookback:  15 * time.Minute,
-		GrafanaRefresh:      10 * time.Minute,
 		MetricRetentionDays: 30,
 	}
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected collector interval validation error")
-	}
-}
-
-func TestValidateRejectsGrafanaRefreshBelowTenMinutes(t *testing.T) {
-	cfg := Config{
-		AWSRegion:           "us-east-1",
-		CollectorInterval:   time.Minute,
-		CloudWatchLookback:  15 * time.Minute,
-		GrafanaRefresh:      5 * time.Minute,
-		MetricRetentionDays: 30,
-	}
-
-	if err := cfg.Validate(); err == nil {
-		t.Fatal("expected Grafana refresh validation error")
 	}
 }
 

@@ -11,18 +11,15 @@ import (
 const (
 	defaultCollectorIntervalSeconds = 60
 	defaultCloudWatchLookbackMin    = 15
-	defaultGrafanaRefreshMin        = 10
 	defaultMetricRetentionDays      = 30
 )
 
 type Config struct {
-	AWSRegion             string
-	DatabaseURL           string
-	CollectorInterval     time.Duration
-	CloudWatchLookback    time.Duration
-	GrafanaRefresh        time.Duration
-	MetricRetentionDays   int
-	DatabaseURLConfigured bool
+	AWSRegion           string
+	DatabaseURL         string
+	CollectorInterval   time.Duration
+	CloudWatchLookback  time.Duration
+	MetricRetentionDays int
 }
 
 func LoadFromEnv() (Config, error) {
@@ -31,10 +28,8 @@ func LoadFromEnv() (Config, error) {
 		DatabaseURL:         strings.TrimSpace(os.Getenv("DATABASE_URL")),
 		CollectorInterval:   time.Duration(getenvInt("COLLECTOR_INTERVAL_SECONDS", defaultCollectorIntervalSeconds)) * time.Second,
 		CloudWatchLookback:  time.Duration(getenvInt("CLOUDWATCH_LOOKBACK_MINUTES", defaultCloudWatchLookbackMin)) * time.Minute,
-		GrafanaRefresh:      time.Duration(getenvInt("GRAFANA_REFRESH_MINUTES", defaultGrafanaRefreshMin)) * time.Minute,
 		MetricRetentionDays: getenvInt("METRIC_RETENTION_DAYS", defaultMetricRetentionDays),
 	}
-	cfg.DatabaseURLConfigured = cfg.DatabaseURL != ""
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -51,9 +46,6 @@ func (cfg Config) Validate() error {
 	}
 	if cfg.CloudWatchLookback < 10*time.Minute || cfg.CloudWatchLookback > 15*time.Minute {
 		return fmt.Errorf("CLOUDWATCH_LOOKBACK_MINUTES must be between 10 and 15")
-	}
-	if cfg.GrafanaRefresh < 10*time.Minute || cfg.GrafanaRefresh > 15*time.Minute {
-		return fmt.Errorf("GRAFANA_REFRESH_MINUTES must be between 10 and 15")
 	}
 	if cfg.MetricRetentionDays != 30 {
 		return fmt.Errorf("METRIC_RETENTION_DAYS must remain 30 for MVP")

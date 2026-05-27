@@ -27,10 +27,10 @@ type DiscoveryRunner interface {
 }
 
 type MetricSet struct {
-	ServiceName string
-	Namespace   string
-	Name        string
-	Metrics     []store.RecommendedMetric
+	ServiceName string                    `json:"serviceName"`
+	Namespace   string                    `json:"namespace"`
+	Name        string                    `json:"name"`
+	Metrics     []store.RecommendedMetric `json:"metrics"`
 }
 
 type Server struct {

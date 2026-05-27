@@ -65,7 +65,6 @@ func TestCollectOnceUsesLookbackAndStoresPoints(t *testing.T) {
 		AWSRegion:           "us-east-1",
 		CloudWatchLookback:  15 * time.Minute,
 		CollectorInterval:   time.Minute,
-		GrafanaRefresh:      10 * time.Minute,
 		MetricRetentionDays: 30,
 	}, db, fetcher, io.Discard)
 	c.clock = func() time.Time { return now }
@@ -101,7 +100,6 @@ func TestCollectOnceStoresPointsAfterPartialFetchFailure(t *testing.T) {
 		AWSRegion:           "us-east-1",
 		CloudWatchLookback:  15 * time.Minute,
 		CollectorInterval:   time.Minute,
-		GrafanaRefresh:      10 * time.Minute,
 		MetricRetentionDays: 30,
 	}, db, fetcher, io.Discard)
 	c.clock = func() time.Time { return now }
@@ -127,7 +125,6 @@ func TestCollectOnceReturnsNonPartialFetchFailure(t *testing.T) {
 		AWSRegion:           "us-east-1",
 		CloudWatchLookback:  15 * time.Minute,
 		CollectorInterval:   time.Minute,
-		GrafanaRefresh:      10 * time.Minute,
 		MetricRetentionDays: 30,
 	}, db, fetcher, io.Discard)
 	c.clock = func() time.Time { return now }

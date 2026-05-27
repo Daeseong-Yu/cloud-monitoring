@@ -221,15 +221,36 @@ ORDER BY r.region, r.service_name, r.display_name, r.resource_id`
 }
 
 func (s *Store) SetResourceEnabled(ctx context.Context, id int64, enabled bool) error {
-	tag, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin resource enabled update: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var resourceID string
+	var region string
+	err = tx.QueryRow(ctx, `
 UPDATE resources
 SET enabled = $2, updated_at = now()
-WHERE id = $1`, id, enabled)
+WHERE id = $1
+RETURNING resource_id, region`, id, enabled).Scan(&resourceID, &region)
+	if err == pgx.ErrNoRows {
+		return fmt.Errorf("resource not found")
+	}
 	if err != nil {
 		return fmt.Errorf("update resource enabled: %w", err)
 	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("resource not found")
+
+	if _, err := tx.Exec(ctx, `
+UPDATE metric_definitions
+SET enabled = $3, updated_at = now()
+WHERE resource_id = $1
+  AND region = $2`, resourceID, region, enabled); err != nil {
+		return fmt.Errorf("update resource metric definitions enabled: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit resource enabled update: %w", err)
 	}
 	return nil
 }
@@ -406,9 +427,24 @@ WHERE id = $1`, resourceRowID).Scan(
 		if err != nil {
 			return 0, err
 		}
+		if err := s.markDiscoveredMetricSelected(ctx, resourceRowID, metric.MetricName); err != nil {
+			return 0, err
+		}
 		applied++
 	}
 	return applied, nil
+}
+
+func (s *Store) markDiscoveredMetricSelected(ctx context.Context, resourceRowID int64, metricName string) error {
+	_, err := s.pool.Exec(ctx, `
+UPDATE discovered_metrics
+SET selected = TRUE, updated_at = now()
+WHERE resource_id = $1
+  AND metric_name = $2`, resourceRowID, metricName)
+	if err != nil {
+		return fmt.Errorf("mark discovered metric selected: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) dimensionsForDiscoveredMetric(ctx context.Context, resourceRowID int64, metricName string) (string, error) {

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-
-	"cloud-monitor/internal/store"
 )
 
 type metricSetFile struct {
@@ -37,23 +35,4 @@ func LoadMetricSets(r io.Reader) ([]MetricSet, error) {
 		}
 	}
 	return file.MetricSets, nil
-}
-
-type metricSetJSON struct {
-	ServiceName string                    `json:"serviceName"`
-	Namespace   string                    `json:"namespace"`
-	Name        string                    `json:"name"`
-	Metrics     []store.RecommendedMetric `json:"metrics"`
-}
-
-func (m *MetricSet) UnmarshalJSON(data []byte) error {
-	var decoded metricSetJSON
-	if err := json.Unmarshal(data, &decoded); err != nil {
-		return err
-	}
-	m.ServiceName = decoded.ServiceName
-	m.Namespace = decoded.Namespace
-	m.Name = decoded.Name
-	m.Metrics = decoded.Metrics
-	return nil
 }

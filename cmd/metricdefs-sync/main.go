@@ -1,21 +1,21 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"cloud-monitor/internal/catalog"
+	"cloud-monitor/internal/sanitize"
+	"cloud-monitor/internal/store"
 )
 
 func main() {
 	configPath := flag.String("config", "", "metric definition catalog JSON path")
-	dryRun := flag.Bool("dry-run", false, "print generated SQL without applying it")
-	psqlBin := flag.String("psql-bin", "psql", "psql executable path")
+	dryRun := flag.Bool("dry-run", false, "print resolved metric definitions without applying them")
 	flag.Parse()
 
 	if strings.TrimSpace(*configPath) == "" {
@@ -35,9 +35,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	sql := buildUpsertSQL(definitions)
+	inputs, err := metricDefinitionInputs(definitions)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "metric definition catalog error: %v\n", err)
+		os.Exit(1)
+	}
 	if *dryRun {
-		fmt.Print(sql)
+		if err := json.NewEncoder(os.Stdout).Encode(inputs); err != nil {
+			fmt.Fprintf(os.Stderr, "metric definition dry-run error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -47,70 +54,51 @@ func main() {
 		os.Exit(2)
 	}
 
-	cmd := exec.Command(*psqlBin, "--set", "ON_ERROR_STOP=1", databaseURL)
-	cmd.Stdin = strings.NewReader(sql)
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		message := strings.TrimSpace(stderr.String())
-		if message == "" {
-			message = err.Error()
-		}
-		fmt.Fprintf(os.Stderr, "metric definition sync failed: %s\n", message)
+	ctx := context.Background()
+	db, err := store.Connect(ctx, databaseURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "metric definition sync database error: %s\n", sanitize.Message(err.Error(), databaseURL))
 		os.Exit(1)
 	}
+	defer db.Close()
 
-	fmt.Printf("metric definition sync applied: definitions=%d\n", len(definitions))
-}
-
-func buildUpsertSQL(definitions []catalog.Definition) string {
-	var b strings.Builder
-	b.WriteString("BEGIN;\n\n")
-
-	for _, def := range definitions {
-		fmt.Fprintf(
-			&b,
-			"INSERT INTO metric_definitions (service_name, namespace, metric_name, resource_id, region, dimensions, statistic, period_seconds, unit, enabled)\n"+
-				"VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %d, %s, %s)\n"+
-				"ON CONFLICT ON CONSTRAINT metric_definitions_unique_metric DO UPDATE SET\n"+
-				"    service_name = EXCLUDED.service_name,\n"+
-				"    dimensions = EXCLUDED.dimensions,\n"+
-				"    unit = EXCLUDED.unit,\n"+
-				"    enabled = EXCLUDED.enabled,\n"+
-				"    updated_at = now();\n\n",
-			sqlQuote(def.ServiceName),
-			sqlQuote(def.Namespace),
-			sqlQuote(def.MetricName),
-			sqlQuote(def.ResourceID),
-			sqlQuote(def.Region),
-			sqlQuote(dimensionsJSON(def.Dimensions)),
-			sqlQuote(def.Statistic),
-			def.PeriodSeconds,
-			sqlQuote(def.Unit),
-			sqlBool(def.Enabled),
-		)
+	for _, input := range inputs {
+		if _, err := db.UpsertMetricDefinition(ctx, input); err != nil {
+			fmt.Fprintf(os.Stderr, "metric definition sync failed: %s\n", sanitize.Message(err.Error(), databaseURL))
+			os.Exit(1)
+		}
 	}
 
-	b.WriteString("COMMIT;\n")
-	return b.String()
+	fmt.Printf("metric definition sync applied: definitions=%d\n", len(inputs))
 }
 
-func dimensionsJSON(dimensions []catalog.ResolvedDimension) string {
+func metricDefinitionInputs(definitions []catalog.Definition) ([]store.MetricDefinitionInput, error) {
+	inputs := make([]store.MetricDefinitionInput, 0, len(definitions))
+	for _, def := range definitions {
+		dimensionsJSON, err := dimensionsJSON(def.Dimensions)
+		if err != nil {
+			return nil, err
+		}
+		inputs = append(inputs, store.MetricDefinitionInput{
+			ServiceName:    def.ServiceName,
+			Namespace:      def.Namespace,
+			MetricName:     def.MetricName,
+			ResourceID:     def.ResourceID,
+			Region:         def.Region,
+			DimensionsJSON: dimensionsJSON,
+			Statistic:      def.Statistic,
+			PeriodSeconds:  int32(def.PeriodSeconds),
+			Unit:           def.Unit,
+			Enabled:        def.Enabled,
+		})
+	}
+	return inputs, nil
+}
+
+func dimensionsJSON(dimensions []catalog.ResolvedDimension) (string, error) {
 	data, err := json.Marshal(dimensions)
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("marshal metric dimensions: %w", err)
 	}
-	return string(data)
-}
-
-func sqlQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
-}
-
-func sqlBool(value bool) string {
-	if value {
-		return "TRUE"
-	}
-	return "FALSE"
+	return string(data), nil
 }

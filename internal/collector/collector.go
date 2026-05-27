@@ -89,20 +89,3 @@ func (c Collector) CollectOnce(ctx context.Context) (RunResult, error) {
 		EndTime:            endTime,
 	}, nil
 }
-
-func (c Collector) Run(ctx context.Context) error {
-	ticker := time.NewTicker(c.cfg.CollectorInterval)
-	defer ticker.Stop()
-
-	for {
-		if _, err := c.CollectOnce(ctx); err != nil {
-			return err
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-	}
-}
