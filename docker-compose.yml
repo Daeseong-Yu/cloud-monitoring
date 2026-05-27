@@ -1,0 +1,138 @@
+name: cloud-monitor
+
+x-app-environment: &app-environment
+  - AWS_REGION=${AWS_REGION:-us-east-1}
+  - AWS_PROFILE
+  - AWS_ACCESS_KEY_ID
+  - AWS_SECRET_ACCESS_KEY
+  - AWS_SESSION_TOKEN
+  - DATABASE_URL=postgres://cloud_monitor:${POSTGRES_PASSWORD:-change-me}@postgres:5432/cloud_monitor?sslmode=disable
+  - COLLECTOR_INTERVAL_SECONDS=${COLLECTOR_INTERVAL_SECONDS:-60}
+  - CLOUDWATCH_LOOKBACK_MINUTES=${CLOUDWATCH_LOOKBACK_MINUTES:-15}
+  - METRIC_RETENTION_DAYS=${METRIC_RETENTION_DAYS:-30}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cloud_monitor}
+      POSTGRES_USER: ${POSTGRES_USER:-cloud_monitor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana-oss:11.5.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-change-me}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=${GRAFANA_ANONYMOUS_ENABLED:-false}
+      - GRAFANA_POSTGRES_HOST=postgres
+      - GRAFANA_POSTGRES_PORT=5432
+      - GRAFANA_POSTGRES_USER=${POSTGRES_USER:-cloud_monitor}
+      - GRAFANA_POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change-me}
+      - GRAFANA_POSTGRES_DATABASE=${POSTGRES_DB:-cloud_monitor}
+      - GRAFANA_POSTGRES_SSLMODE=disable
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards/cloud-monitor:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  schema:
+    profiles: ["setup"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *app-environment
+    command: ["sh", "/app/scripts/apply-schema.sh"]
+
+  metricdefs-sync:
+    profiles: ["setup"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - TARGET_INSTANCE_ID=${TARGET_INSTANCE_ID:-REPLACE_WITH_INSTANCE_ID}
+      - CWAGENT_METRIC_NAME=${CWAGENT_METRIC_NAME:-mem_used_percent}
+      - DATABASE_URL=postgres://cloud_monitor:${POSTGRES_PASSWORD:-change-me}@postgres:5432/cloud_monitor?sslmode=disable
+    command: ["/app/metricdefs-sync", "-config", "/app/configs/metric-definitions.example.json"]
+
+  collector:
+    profiles: ["collector"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *app-environment
+    command: ["/app/collector"]
+
+  admin-ui:
+    profiles: ["admin-ui"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://cloud_monitor:${POSTGRES_PASSWORD:-change-me}@postgres:5432/cloud_monitor?sslmode=disable
+      - ADMIN_HTTP_ADDR=:8080
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-change-me}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+    ports:
+      - "${ADMIN_HTTP_PORT:-8080}:8080"
+    command: ["/app/admin-server"]
+
+  alert-runner:
+    profiles: ["jobs"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://cloud_monitor:${POSTGRES_PASSWORD:-change-me}@postgres:5432/cloud_monitor?sslmode=disable
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+    command: ["/app/alert-runner", "--once"]
+
+  summary-rollup:
+    profiles: ["jobs"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgres://cloud_monitor:${POSTGRES_PASSWORD:-change-me}@postgres:5432/cloud_monitor?sslmode=disable
+    command: ["/app/summary-rollup", "--once"]
+
+  retention-job:
+    profiles: ["jobs"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *app-environment
+    command: ["sh", "/app/scripts/run-retention.sh"]
+
+volumes:
+  postgres-data:
+  grafana-data:

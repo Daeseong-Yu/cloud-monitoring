@@ -12,6 +12,6 @@ jq . \
 
 GOCACHE="$go_cache" /usr/local/go/bin/go test ./...
 
-sh scripts/scan-secrets.sh .ai README.md .env.example aws configs db scripts internal cmd grafana docs
+sh scripts/scan-secrets.sh .ai README.md .env.example Dockerfile docker-compose.yml .dockerignore aws configs db scripts internal cmd grafana docs
 
 echo "common validation passed"
