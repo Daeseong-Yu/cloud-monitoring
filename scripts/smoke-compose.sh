@@ -13,11 +13,20 @@ require_command() {
 }
 
 has_aws_credentials() {
-  if [ "${RUN_AWS_SMOKE:-0}" = "1" ]; then
-    return 0
+  aws_profile="${AWS_PROFILE:-grafana}"
+  aws_shared_config_dir="${AWS_SHARED_CONFIG_DIR:-/etc/cloud-monitor/aws}"
+
+  if [ -r "$aws_shared_config_dir/config" ] && [ -r "$aws_shared_config_dir/credentials" ]; then
+    if grep -Fx "[profile $aws_profile]" "$aws_shared_config_dir/config" >/dev/null || {
+      [ "$aws_profile" = "default" ] && grep -Fx "[default]" "$aws_shared_config_dir/config" >/dev/null
+    }; then
+      if grep -Fx "[$aws_profile]" "$aws_shared_config_dir/credentials" >/dev/null; then
+        return 0
+      fi
+    fi
   fi
 
-  if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+  if [ "${RUN_AWS_SMOKE:-0}" = "1" ]; then
     return 0
   fi
 
@@ -96,7 +105,7 @@ if has_aws_credentials; then
   docker compose --profile discovery run --rm resource-discovery /app/resource-discovery -dry-run >/dev/null
   docker compose --profile collector run --rm collector /app/collector --once
 else
-  echo "AWS smoke is not enabled; running infra-only mode"
+  echo "AWS shared profile is not readable; running infra-only mode"
 fi
 
 docker compose --profile jobs run --rm -e SLACK_WEBHOOK_URL= alert-runner

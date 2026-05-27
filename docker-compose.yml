@@ -2,14 +2,17 @@ name: cloud-monitor
 
 x-app-environment: &app-environment
   - AWS_REGION=${AWS_REGION:-us-east-1}
-  - AWS_PROFILE
-  - AWS_ACCESS_KEY_ID
-  - AWS_SECRET_ACCESS_KEY
-  - AWS_SESSION_TOKEN
+  - AWS_PROFILE=${AWS_PROFILE:-grafana}
+  - AWS_CONFIG_FILE=/aws/config
+  - AWS_SHARED_CREDENTIALS_FILE=/aws/credentials
+  - AWS_SDK_LOAD_CONFIG=1
   - DATABASE_URL=postgres://cloud_monitor:${POSTGRES_PASSWORD:-change-me}@postgres:5432/cloud_monitor?sslmode=disable
   - COLLECTOR_INTERVAL_SECONDS=${COLLECTOR_INTERVAL_SECONDS:-60}
   - CLOUDWATCH_LOOKBACK_MINUTES=${CLOUDWATCH_LOOKBACK_MINUTES:-15}
   - METRIC_RETENTION_DAYS=${METRIC_RETENTION_DAYS:-30}
+
+x-aws-profile-volumes: &aws-profile-volumes
+  - ${AWS_SHARED_CONFIG_DIR:-/etc/cloud-monitor/aws}:/aws:ro
 
 services:
   postgres:
@@ -85,6 +88,7 @@ services:
       postgres:
         condition: service_healthy
     environment: *app-environment
+    volumes: *aws-profile-volumes
     command: ["/app/resource-discovery"]
 
   collector:
@@ -94,6 +98,7 @@ services:
       postgres:
         condition: service_healthy
     environment: *app-environment
+    volumes: *aws-profile-volumes
     command: ["/app/collector"]
 
   admin-ui:
@@ -108,9 +113,14 @@ services:
       - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-change-me}
       - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_PROFILE=${AWS_PROFILE:-grafana}
+      - AWS_CONFIG_FILE=/aws/config
+      - AWS_SHARED_CREDENTIALS_FILE=/aws/credentials
+      - AWS_SDK_LOAD_CONFIG=1
       - RESOURCE_DISCOVERY_BIN=/app/resource-discovery
     ports:
       - "${ADMIN_HTTP_PORT:-8080}:8080"
+    volumes: *aws-profile-volumes
     command: ["/app/admin-server"]
 
   alert-runner:

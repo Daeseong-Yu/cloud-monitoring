@@ -97,17 +97,45 @@ validate_optional_if_set() {
 }
 
 validate_required AWS_REGION
+validate_required AWS_PROFILE
 validate_required DATABASE_URL
 validate_required POSTGRES_PASSWORD
 validate_required GRAFANA_ADMIN_PASSWORD
 validate_required ADMIN_USERNAME
 validate_required ADMIN_PASSWORD
 
-validate_optional_if_set AWS_PROFILE
-validate_optional_if_set AWS_ACCESS_KEY_ID
-validate_optional_if_set AWS_SECRET_ACCESS_KEY
-validate_optional_if_set AWS_SESSION_TOKEN
 validate_optional_if_set TARGET_INSTANCE_ID
+
+forbidden_direct_credential() {
+  var_name="$1"
+  value="$(get_env "$var_name")"
+
+  if [ -n "$value" ]; then
+    fail "$var_name" "direct AWS credential environment variables are not allowed; use AWS_PROFILE with shared config files"
+  fi
+}
+
+forbidden_direct_credential AWS_ACCESS_KEY_ID
+forbidden_direct_credential AWS_SECRET_ACCESS_KEY
+forbidden_direct_credential AWS_SESSION_TOKEN
+
+aws_profile="$(get_env AWS_PROFILE)"
+aws_shared_config_dir="${AWS_SHARED_CONFIG_DIR:-/etc/cloud-monitor/aws}"
+if [ -n "$aws_profile" ]; then
+  if [ ! -r "$aws_shared_config_dir/config" ]; then
+    fail "AWS_SHARED_CONFIG_DIR" "config file is not readable"
+  elif ! grep -Fx "[profile $aws_profile]" "$aws_shared_config_dir/config" >/dev/null; then
+    if [ "$aws_profile" != "default" ] || ! grep -Fx "[default]" "$aws_shared_config_dir/config" >/dev/null; then
+      fail "AWS_PROFILE" "profile is not defined in shared config"
+    fi
+  fi
+
+  if [ ! -r "$aws_shared_config_dir/credentials" ]; then
+    fail "AWS_SHARED_CONFIG_DIR" "credentials file is not readable"
+  elif ! grep -Fx "[$aws_profile]" "$aws_shared_config_dir/credentials" >/dev/null; then
+    fail "AWS_PROFILE" "profile is not defined in shared credentials"
+  fi
+fi
 
 slack_webhook_url="$(get_env SLACK_WEBHOOK_URL)"
 if [ -n "$slack_webhook_url" ]; then
