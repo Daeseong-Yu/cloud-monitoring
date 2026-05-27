@@ -13,7 +13,7 @@ require_command() {
 }
 
 has_aws_credentials() {
-  if [ -n "${AWS_PROFILE:-}" ]; then
+  if [ "${RUN_AWS_SMOKE:-0}" = "1" ]; then
     return 0
   fi
 
@@ -96,7 +96,7 @@ if has_aws_credentials; then
   docker compose --profile discovery run --rm resource-discovery /app/resource-discovery -dry-run >/dev/null
   docker compose --profile collector run --rm collector /app/collector --once
 else
-  echo "AWS credentials are not set; running infra-only mode"
+  echo "AWS smoke is not enabled; running infra-only mode"
 fi
 
 docker compose --profile jobs run --rm -e SLACK_WEBHOOK_URL= alert-runner

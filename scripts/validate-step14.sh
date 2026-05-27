@@ -24,6 +24,7 @@ grep -q 'verify-db-health.sh' scripts/smoke-compose.sh
 grep -q 'expected 401' scripts/smoke-compose.sh
 grep -q 'SLACK_WEBHOOK_URL=' scripts/smoke-compose.sh
 grep -q 'infra-only mode' scripts/smoke-compose.sh
+grep -q 'RUN_AWS_SMOKE' scripts/smoke-compose.sh
 grep -q '/app/resource-discovery -dry-run' scripts/smoke-compose.sh
 grep -q '/app/collector --once' scripts/smoke-compose.sh
 grep -q '/app/metricdefs-sync.*-dry-run' scripts/smoke-compose.sh
