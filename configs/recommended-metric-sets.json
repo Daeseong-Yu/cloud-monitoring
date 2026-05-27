@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "metricSets": [
+    {
+      "serviceName": "ec2",
+      "namespace": "AWS/EC2",
+      "name": "ec2-default",
+      "metrics": [
+        {
+          "metricName": "CPUUtilization",
+          "statistic": "Average",
+          "periodSeconds": 300,
+          "unit": "Percent"
+        },
+        {
+          "metricName": "NetworkIn",
+          "statistic": "Sum",
+          "periodSeconds": 300,
+          "unit": "Bytes"
+        },
+        {
+          "metricName": "NetworkOut",
+          "statistic": "Sum",
+          "periodSeconds": 300,
+          "unit": "Bytes"
+        },
+        {
+          "metricName": "StatusCheckFailed",
+          "statistic": "Maximum",
+          "periodSeconds": 300,
+          "unit": "Count"
+        }
+      ]
+    },
+    {
+      "serviceName": "lambda",
+      "namespace": "AWS/Lambda",
+      "name": "lambda-default",
+      "metrics": [
+        {
+          "metricName": "Invocations",
+          "statistic": "Sum",
+          "periodSeconds": 300,
+          "unit": "Count"
+        },
+        {
+          "metricName": "Errors",
+          "statistic": "Sum",
+          "periodSeconds": 300,
+          "unit": "Count"
+        },
+        {
+          "metricName": "Duration",
+          "statistic": "Average",
+          "periodSeconds": 300,
+          "unit": "Milliseconds"
+        },
+        {
+          "metricName": "Throttles",
+          "statistic": "Sum",
+          "periodSeconds": 300,
+          "unit": "Count"
+        }
+      ]
+    }
+  ]
+}

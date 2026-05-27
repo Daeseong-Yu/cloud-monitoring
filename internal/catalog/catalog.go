@@ -21,6 +21,7 @@ type Resource struct {
 	ServiceName   string `json:"serviceName"`
 	ResourceIDEnv string `json:"resourceIdEnv"`
 	RegionEnv     string `json:"regionEnv"`
+	DimensionName string `json:"dimensionName,omitempty"`
 }
 
 type MetricSet struct {
@@ -29,12 +30,19 @@ type MetricSet struct {
 }
 
 type Metric struct {
-	ServiceName   string `json:"serviceName,omitempty"`
-	Namespace     string `json:"namespace"`
-	MetricName    string `json:"metricName"`
-	Statistic     string `json:"statistic"`
-	PeriodSeconds int    `json:"periodSeconds"`
-	Unit          string `json:"unit,omitempty"`
+	ServiceName   string      `json:"serviceName,omitempty"`
+	Namespace     string      `json:"namespace"`
+	MetricName    string      `json:"metricName"`
+	Dimensions    []Dimension `json:"dimensions,omitempty"`
+	Statistic     string      `json:"statistic"`
+	PeriodSeconds int         `json:"periodSeconds"`
+	Unit          string      `json:"unit,omitempty"`
+}
+
+type Dimension struct {
+	Name     string `json:"name"`
+	Value    string `json:"value,omitempty"`
+	ValueEnv string `json:"valueEnv,omitempty"`
 }
 
 type Binding struct {
@@ -49,10 +57,16 @@ type Definition struct {
 	MetricName    string
 	ResourceID    string
 	Region        string
+	Dimensions    []ResolvedDimension
 	Statistic     string
 	PeriodSeconds int
 	Unit          string
 	Enabled       bool
+}
+
+type ResolvedDimension struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 func Load(r io.Reader) (Catalog, error) {
@@ -176,12 +190,20 @@ func (c Catalog) Resolve(getenv func(string) string) ([]Definition, error) {
 				serviceName = resource.ServiceName
 			}
 
+			dimensions := resolveMetricDimensions(resource, metric, getenv, resourceID)
+			for _, dimension := range dimensions {
+				if strings.TrimSpace(dimension.Value) == "" {
+					return nil, fmt.Errorf("metric %q dimension %q value is required", metric.MetricName, dimension.Name)
+				}
+			}
+
 			def := Definition{
 				ServiceName:   serviceName,
 				Namespace:     strings.TrimSpace(metric.Namespace),
 				MetricName:    strings.TrimSpace(metric.MetricName),
 				ResourceID:    resourceID,
 				Region:        region,
+				Dimensions:    dimensions,
 				Statistic:     strings.TrimSpace(metric.Statistic),
 				PeriodSeconds: metric.PeriodSeconds,
 				Unit:          strings.TrimSpace(metric.Unit),
@@ -233,15 +255,65 @@ func validateMetric(metric Metric) error {
 	if metric.PeriodSeconds <= 0 {
 		return fmt.Errorf("metric %q periodSeconds must be positive", metric.MetricName)
 	}
+	for _, dimension := range metric.Dimensions {
+		if strings.TrimSpace(dimension.Name) == "" {
+			return fmt.Errorf("metric %q dimension name is required", metric.MetricName)
+		}
+		if strings.TrimSpace(dimension.Value) == "" && strings.TrimSpace(dimension.ValueEnv) == "" {
+			return fmt.Errorf("metric %q dimension %q requires value or valueEnv", metric.MetricName, dimension.Name)
+		}
+		if strings.TrimSpace(dimension.Value) != "" && strings.TrimSpace(dimension.ValueEnv) != "" {
+			return fmt.Errorf("metric %q dimension %q cannot use both value and valueEnv", metric.MetricName, dimension.Name)
+		}
+	}
 	return nil
 }
 
+func resolveMetricDimensions(resource Resource, metric Metric, getenv func(string) string, resourceID string) []ResolvedDimension {
+	var dimensions []ResolvedDimension
+	if len(metric.Dimensions) > 0 {
+		for _, dimension := range metric.Dimensions {
+			value := strings.TrimSpace(dimension.Value)
+			if value == "" {
+				value = strings.TrimSpace(getenv(dimension.ValueEnv))
+			}
+			dimensions = append(dimensions, ResolvedDimension{
+				Name:  strings.TrimSpace(dimension.Name),
+				Value: value,
+			})
+		}
+	} else {
+		dimensionName := strings.TrimSpace(resource.DimensionName)
+		if dimensionName == "" {
+			dimensionName = "InstanceId"
+		}
+		dimensions = append(dimensions, ResolvedDimension{
+			Name:  dimensionName,
+			Value: resourceID,
+		})
+	}
+
+	sort.Slice(dimensions, func(i, j int) bool {
+		if dimensions[i].Name == dimensions[j].Name {
+			return dimensions[i].Value < dimensions[j].Value
+		}
+		return dimensions[i].Name < dimensions[j].Name
+	})
+
+	return dimensions
+}
+
 func definitionKey(def Definition) string {
+	dimensionParts := make([]string, 0, len(def.Dimensions))
+	for _, dimension := range def.Dimensions {
+		dimensionParts = append(dimensionParts, dimension.Name+"="+dimension.Value)
+	}
 	return strings.Join([]string{
 		def.Namespace,
 		def.MetricName,
 		def.ResourceID,
 		def.Region,
+		strings.Join(dimensionParts, ","),
 		def.Statistic,
 		fmt.Sprintf("%d", def.PeriodSeconds),
 	}, "\x00")

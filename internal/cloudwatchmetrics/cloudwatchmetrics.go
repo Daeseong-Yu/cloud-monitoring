@@ -56,6 +56,10 @@ func (f Fetcher) fetchBatch(ctx context.Context, definitions []store.MetricDefin
 	for i, definition := range definitions {
 		queryID := fmt.Sprintf("m%d", i)
 		queryToDefinitionID[queryID] = definition.ID
+		dimensions, err := cloudWatchDimensions(definition)
+		if err != nil {
+			return nil, err
+		}
 
 		queries = append(queries, types.MetricDataQuery{
 			Id: aws.String(queryID),
@@ -63,12 +67,7 @@ func (f Fetcher) fetchBatch(ctx context.Context, definitions []store.MetricDefin
 				Metric: &types.Metric{
 					Namespace:  aws.String(definition.Namespace),
 					MetricName: aws.String(definition.MetricName),
-					Dimensions: []types.Dimension{
-						{
-							Name:  aws.String("InstanceId"),
-							Value: aws.String(definition.ResourceID),
-						},
-					},
+					Dimensions: dimensions,
 				},
 				Period: aws.Int32(definition.PeriodSeconds),
 				Stat:   aws.String(definition.Statistic),
@@ -120,4 +119,20 @@ func (f Fetcher) fetchBatch(ctx context.Context, definitions []store.MetricDefin
 	}
 
 	return points, nil
+}
+
+func cloudWatchDimensions(definition store.MetricDefinition) ([]types.Dimension, error) {
+	dimensions, err := definition.Dimensions()
+	if err != nil {
+		return nil, err
+	}
+
+	cloudWatchDimensions := make([]types.Dimension, 0, len(dimensions))
+	for _, dimension := range dimensions {
+		cloudWatchDimensions = append(cloudWatchDimensions, types.Dimension{
+			Name:  aws.String(dimension.Name),
+			Value: aws.String(dimension.Value),
+		})
+	}
+	return cloudWatchDimensions, nil
 }

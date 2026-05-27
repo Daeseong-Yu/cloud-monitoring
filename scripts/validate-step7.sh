@@ -9,13 +9,14 @@ test -f .dockerignore
 test -f docker-compose.yml
 
 docker compose config >"$compose_config"
-docker compose --profile setup --profile collector --profile admin-ui --profile jobs config >"$profile_config"
+docker compose --profile setup --profile discovery --profile collector --profile admin-ui --profile jobs config >"$profile_config"
 
 for service in \
   postgres \
   grafana \
   schema \
   metricdefs-sync \
+  resource-discovery \
   collector \
   admin-ui \
   alert-runner \

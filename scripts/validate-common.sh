@@ -7,7 +7,9 @@ jq . \
   .ai/phases/index.json \
   .ai/phases/cloud-monitor/index.json \
   configs/metric-definitions.example.json \
+  configs/recommended-metric-sets.json \
   aws/iam/collector-readonly-policy.json \
+  aws/iam/discovery-readonly-policy.json \
   grafana/dashboards/cloud-monitor-ec2-mvp.json >/dev/null
 
 GOCACHE="$go_cache" /usr/local/go/bin/go test ./...

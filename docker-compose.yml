@@ -78,6 +78,15 @@ services:
       - DATABASE_URL=postgres://cloud_monitor:${POSTGRES_PASSWORD:-change-me}@postgres:5432/cloud_monitor?sslmode=disable
     command: ["/app/metricdefs-sync", "-config", "/app/configs/metric-definitions.example.json"]
 
+  resource-discovery:
+    profiles: ["discovery"]
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *app-environment
+    command: ["/app/resource-discovery"]
+
   collector:
     profiles: ["collector"]
     build: .

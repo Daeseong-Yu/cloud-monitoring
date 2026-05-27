@@ -11,6 +11,8 @@ if [ -z "${DATABASE_URL:-}" ]; then
   exit 2
 fi
 
-psql --set ON_ERROR_STOP=1 "$DATABASE_URL" -f db/migrations/001_init.sql >/dev/null
+for migration in db/migrations/*.sql; do
+  psql --set ON_ERROR_STOP=1 "$DATABASE_URL" -f "$migration" >/dev/null
+done
 
 echo "schema applied"

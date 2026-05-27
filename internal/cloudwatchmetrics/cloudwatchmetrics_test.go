@@ -71,3 +71,37 @@ func TestFetchBuildsBatchQueryAndConvertsPoints(t *testing.T) {
 		t.Fatalf("value = %f, want 25.5", points[0].Value)
 	}
 }
+
+func TestFetchUsesStoredGenericDimensions(t *testing.T) {
+	now := time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC)
+	client := &fakeMetricDataClient{
+		output: &cloudwatch.GetMetricDataOutput{},
+	}
+
+	fetcher := NewFetcher(client)
+	_, err := fetcher.Fetch(context.Background(), []store.MetricDefinition{
+		{
+			ID:             11,
+			Namespace:      "AWS/Lambda",
+			MetricName:     "Errors",
+			ResourceID:     "orders-api",
+			DimensionsJSON: `[{"name":"FunctionName","value":"orders-api"}]`,
+			Statistic:      "Sum",
+			PeriodSeconds:  300,
+		},
+	}, now.Add(-15*time.Minute), now)
+	if err != nil {
+		t.Fatalf("fetch metric data: %v", err)
+	}
+
+	dimensions := client.inputs[0].MetricDataQueries[0].MetricStat.Metric.Dimensions
+	if got, want := len(dimensions), 1; got != want {
+		t.Fatalf("dimension count = %d, want %d", got, want)
+	}
+	if got, want := *dimensions[0].Name, "FunctionName"; got != want {
+		t.Fatalf("dimension name = %q, want %q", got, want)
+	}
+	if got, want := *dimensions[0].Value, "orders-api"; got != want {
+		t.Fatalf("dimension value = %q, want %q", got, want)
+	}
+}

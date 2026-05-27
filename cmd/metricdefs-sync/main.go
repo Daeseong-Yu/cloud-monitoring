@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -70,10 +71,11 @@ func buildUpsertSQL(definitions []catalog.Definition) string {
 	for _, def := range definitions {
 		fmt.Fprintf(
 			&b,
-			"INSERT INTO metric_definitions (service_name, namespace, metric_name, resource_id, region, statistic, period_seconds, unit, enabled)\n"+
-				"VALUES (%s, %s, %s, %s, %s, %s, %d, %s, %s)\n"+
+			"INSERT INTO metric_definitions (service_name, namespace, metric_name, resource_id, region, dimensions, statistic, period_seconds, unit, enabled)\n"+
+				"VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s, %d, %s, %s)\n"+
 				"ON CONFLICT ON CONSTRAINT metric_definitions_unique_metric DO UPDATE SET\n"+
 				"    service_name = EXCLUDED.service_name,\n"+
+				"    dimensions = EXCLUDED.dimensions,\n"+
 				"    unit = EXCLUDED.unit,\n"+
 				"    enabled = EXCLUDED.enabled,\n"+
 				"    updated_at = now();\n\n",
@@ -82,6 +84,7 @@ func buildUpsertSQL(definitions []catalog.Definition) string {
 			sqlQuote(def.MetricName),
 			sqlQuote(def.ResourceID),
 			sqlQuote(def.Region),
+			sqlQuote(dimensionsJSON(def.Dimensions)),
 			sqlQuote(def.Statistic),
 			def.PeriodSeconds,
 			sqlQuote(def.Unit),
@@ -91,6 +94,14 @@ func buildUpsertSQL(definitions []catalog.Definition) string {
 
 	b.WriteString("COMMIT;\n")
 	return b.String()
+}
+
+func dimensionsJSON(dimensions []catalog.ResolvedDimension) string {
+	data, err := json.Marshal(dimensions)
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 func sqlQuote(value string) string {
