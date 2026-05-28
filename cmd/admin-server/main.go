@@ -40,15 +40,15 @@ func main() {
 	}
 	defer db.Close()
 
-	metricSetsFile, err := os.Open("configs/recommended-metric-sets.json")
+	metricSetsFile, err := os.Open("configs/product-metric-catalog.json")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "admin metric set error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "admin product metric catalog error: %v\n", err)
 		os.Exit(1)
 	}
 	defer metricSetsFile.Close()
-	metricSets, err := admin.LoadMetricSets(metricSetsFile)
+	metricSets, err := admin.LoadMetricSetsFromProductCatalog(metricSetsFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "admin metric set error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "admin product metric catalog error: %v\n", err)
 		os.Exit(1)
 	}
 

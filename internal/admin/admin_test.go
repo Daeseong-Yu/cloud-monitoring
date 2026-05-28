@@ -100,3 +100,48 @@ func TestLoadMetricSets(t *testing.T) {
 		t.Fatalf("unexpected metric sets: %#v", sets)
 	}
 }
+
+func TestLoadMetricSetsFromProductCatalog(t *testing.T) {
+	sets, err := LoadMetricSetsFromProductCatalog(strings.NewReader(`{
+	  "version": 1,
+	  "metrics": [
+	    {
+	      "key": "lambda.errors",
+	      "serviceName": "lambda",
+	      "namespace": "AWS/Lambda",
+	      "metricName": "Errors",
+	      "statistic": "Sum",
+	      "periodSeconds": 300,
+	      "unit": "Count",
+	      "requiredDimensions": ["FunctionName"],
+	      "recommended": true,
+	      "axis": {"min": 0},
+	      "prerequisite": "",
+	      "costWarning": ""
+	    },
+	    {
+	      "key": "lambda.duration",
+	      "serviceName": "lambda",
+	      "namespace": "AWS/Lambda",
+	      "metricName": "Duration",
+	      "statistic": "Average",
+	      "periodSeconds": 300,
+	      "unit": "Milliseconds",
+	      "requiredDimensions": ["FunctionName"],
+	      "recommended": false,
+	      "axis": {"min": 0},
+	      "prerequisite": "",
+	      "costWarning": ""
+	    }
+	  ]
+	}`))
+	if err != nil {
+		t.Fatalf("load metric sets from product catalog: %v", err)
+	}
+	if len(sets) != 1 || sets[0].Name != "lambda-default" {
+		t.Fatalf("unexpected metric sets: %#v", sets)
+	}
+	if len(sets[0].Metrics) != 1 || sets[0].Metrics[0].MetricName != "Errors" {
+		t.Fatalf("unexpected recommended metrics: %#v", sets[0].Metrics)
+	}
+}

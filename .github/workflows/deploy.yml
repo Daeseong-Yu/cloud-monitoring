@@ -60,6 +60,23 @@ jobs:
             exit 1
           fi
 
+          if printf '%s' "$DEPLOY_HOST" | grep -Eq '[[:space:]]'; then
+            echo "DEPLOY_HOST must not contain whitespace" >&2
+            exit 1
+          fi
+
+          case "$DEPLOY_HOST" in
+            *://*|*@*|*/*|*:*)
+              echo "DEPLOY_HOST must be a host only, such as an EC2 public IPv4 address or public DNS name. Do not include scheme, user, path, or port." >&2
+              exit 1
+              ;;
+          esac
+
+          if ! getent ahosts "$DEPLOY_HOST" >/dev/null; then
+            echo "DEPLOY_HOST could not be resolved from the GitHub runner. Use a public IPv4 address or public DNS name reachable from GitHub Actions." >&2
+            exit 1
+          fi
+
           if [ -z "$DEPLOY_SSH_KEY" ]; then
             echo "DEPLOY_SSH_KEY secret is required" >&2
             exit 1

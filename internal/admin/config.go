@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+
+	"cloud-monitor/internal/productcatalog"
+	"cloud-monitor/internal/store"
 )
 
 type metricSetFile struct {
@@ -35,4 +38,32 @@ func LoadMetricSets(r io.Reader) ([]MetricSet, error) {
 		}
 	}
 	return file.MetricSets, nil
+}
+
+func LoadMetricSetsFromProductCatalog(r io.Reader) ([]MetricSet, error) {
+	catalog, err := productcatalog.Load(r)
+	if err != nil {
+		return nil, err
+	}
+
+	productSets := catalog.RecommendedMetricSets()
+	sets := make([]MetricSet, 0, len(productSets))
+	for _, productSet := range productSets {
+		metrics := make([]store.RecommendedMetric, 0, len(productSet.Metrics))
+		for _, metric := range productSet.Metrics {
+			metrics = append(metrics, store.RecommendedMetric{
+				MetricName:    metric.MetricName,
+				Statistic:     metric.Statistic,
+				PeriodSeconds: int32(metric.PeriodSeconds),
+				Unit:          metric.Unit,
+			})
+		}
+		sets = append(sets, MetricSet{
+			ServiceName: productSet.ServiceName,
+			Namespace:   productSet.Namespace,
+			Name:        productSet.Name,
+			Metrics:     metrics,
+		})
+	}
+	return sets, nil
 }

@@ -7,6 +7,7 @@ go_bin="${GO_BIN:-go}"
 json_files="
   configs/metric-definitions.example.json
   configs/recommended-metric-sets.json
+  configs/product-metric-catalog.json
   aws/iam/collector-readonly-policy.json
   aws/iam/discovery-readonly-policy.json
   grafana/dashboards/cloud-monitor-ec2-mvp.json
