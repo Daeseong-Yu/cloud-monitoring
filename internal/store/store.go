@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"cloud-monitor/internal/discovery"
@@ -67,6 +68,16 @@ type AdminResource struct {
 	MetricDefinitions int64  `json:"metricDefinitions"`
 }
 
+type AdminService struct {
+	ServiceName        string `json:"serviceName"`
+	Namespace          string `json:"namespace"`
+	ResourceCount      int64  `json:"resourceCount"`
+	AvailableMetrics   int64  `json:"availableMetrics"`
+	RequiresSetup      int64  `json:"requiresSetup"`
+	UnsupportedMetrics int64  `json:"unsupportedMetrics"`
+	SelectedMetrics    int64  `json:"selectedMetrics"`
+}
+
 type AdminMetricCandidate struct {
 	ID                 int64  `json:"id"`
 	ResourceID         int64  `json:"resourceRowId"`
@@ -116,6 +127,14 @@ type MetricDefinitionInput struct {
 	PeriodSeconds  int32  `json:"periodSeconds"`
 	Unit           string `json:"unit"`
 	Enabled        bool   `json:"enabled"`
+}
+
+type PublicMetadataInput struct {
+	PublicEnabled     bool   `json:"publicEnabled"`
+	PublicDisplayName string `json:"publicDisplayName"`
+	PublicDescription string `json:"publicDescription"`
+	PublicLabel       string `json:"publicLabel"`
+	PublicSortOrder   int32  `json:"publicSortOrder"`
 }
 
 type RecommendedMetric struct {
@@ -290,6 +309,35 @@ ON CONFLICT ON CONSTRAINT metric_points_unique_point DO NOTHING`,
 	return inserted, nil
 }
 
+func (s *Store) ListAdminServices(ctx context.Context, region string) ([]AdminService, error) {
+	const query = `
+SELECT
+    r.service_name,
+    r.namespace,
+    COUNT(DISTINCT r.id) AS resource_count,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'available') AS available_metrics,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'requires_setup') AS requires_setup,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'unsupported') AS unsupported_metrics,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.selected = TRUE) AS selected_metrics
+FROM resources r
+LEFT JOIN discovered_metrics dm ON dm.resource_id = r.id
+WHERE ($1 = '' OR r.region = $1)
+GROUP BY r.service_name, r.namespace
+ORDER BY r.service_name, r.namespace`
+
+	rows, err := s.pool.Query(ctx, query, region)
+	if err != nil {
+		return nil, fmt.Errorf("query admin services: %w", err)
+	}
+	defer rows.Close()
+
+	services, err := pgx.CollectRows(rows, pgx.RowToStructByPos[AdminService])
+	if err != nil {
+		return nil, fmt.Errorf("scan admin services: %w", err)
+	}
+	return services, nil
+}
+
 func (s *Store) ListAdminResources(ctx context.Context, region string) ([]AdminResource, error) {
 	const query = `
 SELECT
@@ -405,6 +453,35 @@ WHERE resource_id = $1
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit resource enabled update: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) UpdateResourcePublicMetadata(ctx context.Context, id int64, input PublicMetadataInput) error {
+	if input.PublicEnabled && strings.TrimSpace(input.PublicLabel) == "" {
+		return fmt.Errorf("public_label is required when public_enabled is true")
+	}
+	tag, err := s.pool.Exec(ctx, `
+UPDATE resources
+SET public_enabled = $2,
+    public_display_name = $3,
+    public_description = $4,
+    public_label = $5,
+    public_sort_order = $6,
+    updated_at = now()
+WHERE id = $1`,
+		id,
+		input.PublicEnabled,
+		strings.TrimSpace(input.PublicDisplayName),
+		strings.TrimSpace(input.PublicDescription),
+		strings.TrimSpace(input.PublicLabel),
+		input.PublicSortOrder,
+	)
+	if err != nil {
+		return fmt.Errorf("update resource public metadata: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("resource not found")
 	}
 	return nil
 }
@@ -526,6 +603,35 @@ WHERE id = $1`, id, enabled)
 	return nil
 }
 
+func (s *Store) UpdateMetricDefinitionPublicMetadata(ctx context.Context, id int64, input PublicMetadataInput) error {
+	if input.PublicEnabled && strings.TrimSpace(input.PublicLabel) == "" {
+		return fmt.Errorf("public_label is required when public_enabled is true")
+	}
+	tag, err := s.pool.Exec(ctx, `
+UPDATE metric_definitions
+SET public_enabled = $2,
+    public_display_name = $3,
+    public_description = $4,
+    public_label = $5,
+    public_sort_order = $6,
+    updated_at = now()
+WHERE id = $1`,
+		id,
+		input.PublicEnabled,
+		strings.TrimSpace(input.PublicDisplayName),
+		strings.TrimSpace(input.PublicDescription),
+		strings.TrimSpace(input.PublicLabel),
+		input.PublicSortOrder,
+	)
+	if err != nil {
+		return fmt.Errorf("update metric definition public metadata: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("metric definition not found")
+	}
+	return nil
+}
+
 func (s *Store) DeleteMetricDefinition(ctx context.Context, id int64) error {
 	tag, err := s.pool.Exec(ctx, "DELETE FROM metric_definitions WHERE id = $1", id)
 	if err != nil {
@@ -535,6 +641,104 @@ func (s *Store) DeleteMetricDefinition(ctx context.Context, id int64) error {
 		return fmt.Errorf("metric definition not found")
 	}
 	return nil
+}
+
+func (s *Store) SelectMetricCandidate(ctx context.Context, candidateID int64) (int64, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin metric candidate selection: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	var candidate AdminMetricCandidate
+	err = tx.QueryRow(ctx, `
+SELECT
+    dm.id,
+    dm.resource_id,
+    r.service_name,
+    r.resource_id,
+    r.display_name,
+    dm.namespace,
+    dm.metric_name,
+    dm.dimensions::text,
+    dm.statistic,
+    dm.period_seconds,
+    COALESCE(dm.unit, ''),
+    dm.region,
+    dm.selected,
+    dm.availability_status,
+    dm.availability_reason,
+    dm.provider_source,
+    dm.prerequisite,
+    dm.cost_warning
+FROM discovered_metrics dm
+JOIN resources r ON r.id = dm.resource_id
+WHERE dm.id = $1`, candidateID).Scan(
+		&candidate.ID,
+		&candidate.ResourceID,
+		&candidate.ServiceName,
+		&candidate.ResourceIdentifier,
+		&candidate.DisplayName,
+		&candidate.Namespace,
+		&candidate.MetricName,
+		&candidate.DimensionsJSON,
+		&candidate.Statistic,
+		&candidate.PeriodSeconds,
+		&candidate.Unit,
+		&candidate.Region,
+		&candidate.Selected,
+		&candidate.AvailabilityStatus,
+		&candidate.AvailabilityReason,
+		&candidate.ProviderSource,
+		&candidate.Prerequisite,
+		&candidate.CostWarning,
+	)
+	if err == pgx.ErrNoRows {
+		return 0, fmt.Errorf("metric candidate not found")
+	}
+	if err != nil {
+		return 0, fmt.Errorf("query metric candidate: %w", err)
+	}
+	if candidate.AvailabilityStatus != discovery.AvailabilityAvailable {
+		return 0, fmt.Errorf("metric candidate is not available: %s", candidate.AvailabilityStatus)
+	}
+
+	var definitionID int64
+	err = tx.QueryRow(ctx, `
+INSERT INTO metric_definitions (service_name, namespace, metric_name, resource_id, region, dimensions, statistic, period_seconds, unit, enabled)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, TRUE)
+ON CONFLICT ON CONSTRAINT metric_definitions_unique_metric DO UPDATE SET
+    service_name = EXCLUDED.service_name,
+    dimensions = EXCLUDED.dimensions,
+    unit = EXCLUDED.unit,
+    enabled = TRUE,
+    updated_at = now()
+RETURNING id`,
+		candidate.ServiceName,
+		candidate.Namespace,
+		candidate.MetricName,
+		candidate.ResourceIdentifier,
+		candidate.Region,
+		candidate.DimensionsJSON,
+		candidate.Statistic,
+		candidate.PeriodSeconds,
+		candidate.Unit,
+	).Scan(&definitionID)
+	if err != nil {
+		return 0, fmt.Errorf("upsert metric definition from candidate: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+UPDATE discovered_metrics
+SET selected = TRUE, updated_at = now()
+WHERE id = $1`, candidateID); err != nil {
+		return 0, fmt.Errorf("mark metric candidate selected: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit metric candidate selection: %w", err)
+	}
+	return definitionID, nil
 }
 
 func (s *Store) ApplyRecommendedMetricSet(ctx context.Context, resourceRowID int64, metrics []RecommendedMetric) (int64, error) {

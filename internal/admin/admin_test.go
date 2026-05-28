@@ -12,6 +12,13 @@ import (
 
 type fakeStore struct {
 	resourceEnabled bool
+	selectedMetric  bool
+	resourcePublic  store.PublicMetadataInput
+	metricPublic    store.PublicMetadataInput
+}
+
+func (s *fakeStore) ListAdminServices(context.Context, string) ([]store.AdminService, error) {
+	return []store.AdminService{{ServiceName: "lambda", Namespace: "AWS/Lambda", ResourceCount: 1, AvailableMetrics: 1}}, nil
 }
 
 func (s *fakeStore) ListAdminResources(context.Context, string) ([]store.AdminResource, error) {
@@ -20,6 +27,11 @@ func (s *fakeStore) ListAdminResources(context.Context, string) ([]store.AdminRe
 
 func (s *fakeStore) SetResourceEnabled(_ context.Context, _ int64, enabled bool) error {
 	s.resourceEnabled = enabled
+	return nil
+}
+
+func (s *fakeStore) UpdateResourcePublicMetadata(_ context.Context, _ int64, input store.PublicMetadataInput) error {
+	s.resourcePublic = input
 	return nil
 }
 
@@ -52,12 +64,22 @@ func (s *fakeStore) SetMetricDefinitionEnabled(context.Context, int64, bool) err
 	return nil
 }
 
+func (s *fakeStore) UpdateMetricDefinitionPublicMetadata(_ context.Context, _ int64, input store.PublicMetadataInput) error {
+	s.metricPublic = input
+	return nil
+}
+
 func (s *fakeStore) DeleteMetricDefinition(context.Context, int64) error {
 	return nil
 }
 
 func (s *fakeStore) ApplyRecommendedMetricSet(context.Context, int64, []store.RecommendedMetric) (int64, error) {
 	return 1, nil
+}
+
+func (s *fakeStore) SelectMetricCandidate(context.Context, int64) (int64, error) {
+	s.selectedMetric = true
+	return 10, nil
 }
 
 func TestAdminRequiresBasicAuth(t *testing.T) {
@@ -112,6 +134,63 @@ func TestAPIMetricCandidatesIncludesAvailability(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "availabilityStatus") {
 		t.Fatalf("response does not include availability status: %s", response.Body.String())
+	}
+}
+
+func TestAPIServicesUsesBasicAuth(t *testing.T) {
+	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/services", nil)
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "resourceCount") {
+		t.Fatalf("response does not include service summary: %s", response.Body.String())
+	}
+}
+
+func TestAPIMetricCandidateSelect(t *testing.T) {
+	st := &fakeStore{}
+	server, err := NewServer(Config{Store: st, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/metric-candidates/1/select", nil)
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if !st.selectedMetric {
+		t.Fatal("expected metric candidate selection")
+	}
+}
+
+func TestAPIResourcePublicMetadataRequiresLabelWhenEnabled(t *testing.T) {
+	st := &fakeStore{}
+	server, err := NewServer(Config{Store: st, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPatch, "/api/resources/1/public", strings.NewReader(`{"publicEnabled":true}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.Code)
 	}
 }
 
