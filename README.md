@@ -130,6 +130,16 @@ Provisioning 대상:
 
 Grafana는 `cloud-monitor-postgres` datasource만 사용합니다.
 
+## Public Portfolio API
+
+Public Portfolio API는 read-only이며 Admin API와 별도 경로에서 제공합니다. 응답은 `public_enabled=true`로 명시한 resource와 metric definition만 포함하고, public alias와 public label 중심의 데이터만 반환합니다.
+
+- `GET /public/overview`
+- `GET /api/public/metrics`
+- `GET /api/public/metrics/{id}/series`
+
+Public API 응답에는 raw resource id, AWS account id, full ARN, raw tags, credential, raw collector error를 포함하지 않습니다.
+
 ## AWS 권한
 
 Collector와 discovery에는 read-only 권한만 필요합니다.

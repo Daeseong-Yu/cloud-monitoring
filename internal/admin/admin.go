@@ -17,6 +17,8 @@ type Store interface {
 	ListAdminResources(context.Context, string) ([]store.AdminResource, error)
 	ListAdminMetricCandidates(context.Context, string) ([]store.AdminMetricCandidate, error)
 	CollectionCostEstimate(context.Context, string, int64) (store.CollectionCostEstimate, error)
+	ListPublicMetrics(context.Context) ([]store.PublicMetric, error)
+	ListPublicMetricSeries(context.Context, string, int32) ([]store.PublicMetricSeriesPoint, error)
 	SetResourceEnabled(context.Context, int64, bool) error
 	UpdateResourcePublicMetadata(context.Context, int64, store.PublicMetadataInput) error
 	ListAdminMetricDefinitions(context.Context, string) ([]store.AdminMetricDefinition, error)
@@ -91,23 +93,34 @@ func NewServer(cfg Config) (*Server, error) {
 }
 
 func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.redirectRoot)
-	mux.HandleFunc("/admin", s.handleAdmin)
-	mux.HandleFunc("/admin/discovery/run", s.handleRunDiscovery)
-	mux.HandleFunc("/admin/resources/", s.handleAdminResourceAction)
-	mux.HandleFunc("/admin/metric-candidates/", s.handleAdminMetricCandidateAction)
-	mux.HandleFunc("/admin/metric-definitions", s.handleAdminMetricDefinitions)
-	mux.HandleFunc("/admin/metric-definitions/", s.handleAdminMetricDefinitionAction)
-	mux.HandleFunc("/api/services", s.handleAPIServices)
-	mux.HandleFunc("/api/cost-estimate", s.handleAPICostEstimate)
-	mux.HandleFunc("/api/resources", s.handleAPIResources)
-	mux.HandleFunc("/api/resources/", s.handleAPIResourceAction)
-	mux.HandleFunc("/api/metric-candidates", s.handleAPIMetricCandidates)
-	mux.HandleFunc("/api/metric-candidates/", s.handleAPIMetricCandidateAction)
-	mux.HandleFunc("/api/metric-definitions", s.handleAPIMetricDefinitions)
-	mux.HandleFunc("/api/metric-definitions/", s.handleAPIMetricDefinitionAction)
-	return s.basicAuth(mux)
+	publicMux := http.NewServeMux()
+	publicMux.HandleFunc("/public/overview", s.handlePublicOverview)
+	publicMux.HandleFunc("/api/public/metrics", s.handleAPIPublicMetrics)
+	publicMux.HandleFunc("/api/public/metrics/", s.handleAPIPublicMetricSeries)
+
+	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("/", s.redirectRoot)
+	adminMux.HandleFunc("/admin", s.handleAdmin)
+	adminMux.HandleFunc("/admin/discovery/run", s.handleRunDiscovery)
+	adminMux.HandleFunc("/admin/resources/", s.handleAdminResourceAction)
+	adminMux.HandleFunc("/admin/metric-candidates/", s.handleAdminMetricCandidateAction)
+	adminMux.HandleFunc("/admin/metric-definitions", s.handleAdminMetricDefinitions)
+	adminMux.HandleFunc("/admin/metric-definitions/", s.handleAdminMetricDefinitionAction)
+	adminMux.HandleFunc("/api/services", s.handleAPIServices)
+	adminMux.HandleFunc("/api/cost-estimate", s.handleAPICostEstimate)
+	adminMux.HandleFunc("/api/resources", s.handleAPIResources)
+	adminMux.HandleFunc("/api/resources/", s.handleAPIResourceAction)
+	adminMux.HandleFunc("/api/metric-candidates", s.handleAPIMetricCandidates)
+	adminMux.HandleFunc("/api/metric-candidates/", s.handleAPIMetricCandidateAction)
+	adminMux.HandleFunc("/api/metric-definitions", s.handleAPIMetricDefinitions)
+	adminMux.HandleFunc("/api/metric-definitions/", s.handleAPIMetricDefinitionAction)
+
+	root := http.NewServeMux()
+	root.Handle("/public/overview", publicMux)
+	root.Handle("/api/public/metrics", publicMux)
+	root.Handle("/api/public/metrics/", publicMux)
+	root.Handle("/", s.basicAuth(adminMux))
+	return root
 }
 
 func (s *Server) basicAuth(next http.Handler) http.Handler {
@@ -161,6 +174,74 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if err := s.templates.ExecuteTemplate(w, "page", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) handlePublicOverview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	metrics, err := s.store.ListPublicMetrics(r.Context())
+	if err != nil {
+		http.Error(w, "public metrics are unavailable", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"metricCount": len(metrics),
+		"metrics":     metrics,
+	})
+}
+
+func (s *Server) handleAPIPublicMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/api/public/metrics" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	metrics, err := s.store.ListPublicMetrics(r.Context())
+	if err != nil {
+		http.Error(w, "public metrics are unavailable", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, metrics)
+}
+
+func (s *Server) handleAPIPublicMetricSeries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	id, ok := strings.CutPrefix(strings.Trim(r.URL.Path, "/"), "api/public/metrics/")
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	id, ok = strings.CutSuffix(id, "/series")
+	if !ok || strings.TrimSpace(id) == "" || strings.Contains(id, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	limit := int32(288)
+	if value := strings.TrimSpace(r.URL.Query().Get("limit")); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 32)
+		if err != nil || parsed <= 0 {
+			http.Error(w, "limit must be a positive number", http.StatusBadRequest)
+			return
+		}
+		limit = int32(parsed)
+	}
+	points, err := s.store.ListPublicMetricSeries(r.Context(), id, limit)
+	if err != nil {
+		http.Error(w, "public metric series is unavailable", http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"id":     id,
+		"points": points,
+	})
 }
 
 func (s *Server) dashboardData(ctx context.Context, region string) ([]store.AdminService, []store.AdminResource, []store.AdminMetricCandidate, []store.AdminMetricDefinition, store.CollectionCostEstimate, error) {
