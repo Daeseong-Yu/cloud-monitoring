@@ -497,7 +497,8 @@
   "schemaVersion": 39,
   "tags": [
     "cloud-monitor",
-    "overview"
+    "overview",
+    "internal"
   ],
   "templating": {
     "list": [

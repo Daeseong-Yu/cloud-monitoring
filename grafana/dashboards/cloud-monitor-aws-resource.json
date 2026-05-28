@@ -87,7 +87,8 @@
   "schemaVersion": 39,
   "tags": [
     "cloud-monitor",
-    "aws-resource"
+    "aws-resource",
+    "internal"
   ],
   "templating": {
     "list": [

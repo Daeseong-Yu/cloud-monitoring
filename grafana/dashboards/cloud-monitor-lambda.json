@@ -219,7 +219,8 @@
   "schemaVersion": 39,
   "tags": [
     "cloud-monitor",
-    "lambda"
+    "lambda",
+    "internal"
   ],
   "templating": {
     "list": [

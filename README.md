@@ -35,7 +35,8 @@ Grafana는 CloudWatch를 직접 조회하지 않습니다. CloudWatch API 호출
 - Grafana CloudWatch datasource와 CloudWatch Logs panel은 사용하지 않습니다.
 - AWS credential은 direct environment key가 아니라 shared profile 파일로 전달합니다.
 - Admin UI는 운영자 전용이며 public internet에 직접 노출하지 않습니다.
-- 공개 가능한 영역은 Grafana read-only dashboard로 제한합니다.
+- Grafana dashboard는 내부 운영/분석 surface이며 public portfolio surface로 사용하지 않습니다.
+- 외부 공개 영역은 public metadata로 opt-in된 제품 API/UI surface에서만 제공합니다.
 - AWS IAM 권한은 read-only 조회 권한만 사용합니다.
 - 실제 secret, account id, full ARN, resource id는 repository에 commit하지 않습니다.
 
@@ -62,7 +63,7 @@ Docker Compose 서비스:
 3. Admin UI에서 `Discovery 실행`을 누릅니다.
 4. 발견된 resource에 추천 metric set을 적용합니다.
 5. Collector를 실행해 CloudWatch metric을 PostgreSQL에 저장합니다.
-6. Grafana dashboard에서 PostgreSQL에 저장된 metric을 조회합니다.
+6. 내부 Grafana dashboard에서 PostgreSQL에 저장된 metric을 조회합니다.
 
 ## 빠른 설치 흐름
 
@@ -111,7 +112,9 @@ docker compose exec postgres psql -U "${POSTGRES_USER:-cloud_monitor}" \
   -c "select count(*) from metric_definitions where enabled = true; select count(*) from metric_points;"
 ```
 
-## Dashboard
+## Internal Dashboard
+
+Grafana dashboard는 내부 운영/분석용입니다. 실제 resource id나 운영 진단 정보가 보일 수 있으므로 외부 portfolio 공개 surface로 사용하지 않습니다.
 
 Provisioning 대상:
 

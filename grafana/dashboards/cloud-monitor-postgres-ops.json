@@ -129,7 +129,8 @@
   "schemaVersion": 39,
   "tags": [
     "cloud-monitor",
-    "postgres"
+    "postgres",
+    "internal"
   ],
   "templating": {
     "list": []

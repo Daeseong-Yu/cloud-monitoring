@@ -217,52 +217,6 @@
         "type": "postgres",
         "uid": "cloud-monitor-postgres"
       },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ms",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 8
-      },
-      "id": 5,
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "cloud-monitor-postgres"
-          },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/ApiGateway'\n    AND md.metric_name = 'IntegrationLatency'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
-          "refId": "A"
-        }
-      ],
-      "title": "Integration Latency",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "cloud-monitor-postgres"
-      },
       "gridPos": {
         "h": 7,
         "w": 24,
@@ -295,7 +249,8 @@
   "schemaVersion": 39,
   "tags": [
     "cloud-monitor",
-    "api-gateway"
+    "api-gateway",
+    "internal"
   ],
   "templating": {
     "list": [
