@@ -8,12 +8,15 @@ import (
 	"time"
 
 	"cloud-monitor/internal/config"
+	"cloud-monitor/internal/sanitize"
 	"cloud-monitor/internal/store"
 )
 
 type DefinitionStore interface {
 	EnabledMetricDefinitions(context.Context, string) ([]store.MetricDefinition, error)
 	InsertMetricPoints(context.Context, []store.MetricPoint) (int64, error)
+	RecordMetricCollectionSuccess(context.Context, store.MetricCollectionStatusInput) error
+	RecordMetricCollectionFailure(context.Context, store.MetricCollectionStatusInput) error
 }
 
 type MetricFetcher interface {
@@ -69,6 +72,7 @@ func (c Collector) CollectOnce(ctx context.Context) (RunResult, error) {
 	if err != nil {
 		var partial partialFetchError
 		if !errors.As(err, &partial) {
+			c.recordFailures(ctx, definitions, err, endTime)
 			return RunResult{}, fmt.Errorf("fetch metric data: %w", err)
 		}
 		skipped = partial.SkippedDefinitions()
@@ -77,8 +81,10 @@ func (c Collector) CollectOnce(ctx context.Context) (RunResult, error) {
 
 	inserted, err := c.store.InsertMetricPoints(ctx, points)
 	if err != nil {
+		c.recordFailures(ctx, definitions, err, endTime)
 		return RunResult{}, fmt.Errorf("store metric points: %w", err)
 	}
+	c.recordSuccesses(ctx, points, endTime)
 
 	return RunResult{
 		Definitions:        len(definitions),
@@ -88,4 +94,38 @@ func (c Collector) CollectOnce(ctx context.Context) (RunResult, error) {
 		StartTime:          startTime,
 		EndTime:            endTime,
 	}, nil
+}
+
+func (c Collector) recordSuccesses(ctx context.Context, points []store.MetricPoint, collectedAt time.Time) {
+	statuses := map[int64]store.MetricCollectionStatusInput{}
+	for _, point := range points {
+		status := statuses[point.MetricDefinitionID]
+		status.MetricDefinitionID = point.MetricDefinitionID
+		status.RecentPointCount++
+		status.CollectedAt = collectedAt
+		if point.Timestamp.After(status.LatestPointAt) {
+			status.LatestPointAt = point.Timestamp
+		}
+		statuses[point.MetricDefinitionID] = status
+	}
+
+	for _, status := range statuses {
+		if err := c.store.RecordMetricCollectionSuccess(ctx, status); err != nil {
+			fmt.Fprintf(c.log, "collector status update failure: %s\n", sanitize.Message(err.Error(), ""))
+		}
+	}
+}
+
+func (c Collector) recordFailures(ctx context.Context, definitions []store.MetricDefinition, err error, collectedAt time.Time) {
+	message := sanitize.Message(err.Error(), "")
+	for _, definition := range definitions {
+		input := store.MetricCollectionStatusInput{
+			MetricDefinitionID: definition.ID,
+			SanitizedError:     message,
+			CollectedAt:        collectedAt,
+		}
+		if statusErr := c.store.RecordMetricCollectionFailure(ctx, input); statusErr != nil {
+			fmt.Fprintf(c.log, "collector status update failure: %s\n", sanitize.Message(statusErr.Error(), ""))
+		}
+	}
 }

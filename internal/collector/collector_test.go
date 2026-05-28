@@ -14,6 +14,8 @@ import (
 type fakeStore struct {
 	definitions []store.MetricDefinition
 	points      []store.MetricPoint
+	successes   []store.MetricCollectionStatusInput
+	failures    []store.MetricCollectionStatusInput
 	inserted    int64
 }
 
@@ -24,6 +26,16 @@ func (s *fakeStore) EnabledMetricDefinitions(ctx context.Context, region string)
 func (s *fakeStore) InsertMetricPoints(ctx context.Context, points []store.MetricPoint) (int64, error) {
 	s.points = append(s.points, points...)
 	return s.inserted, nil
+}
+
+func (s *fakeStore) RecordMetricCollectionSuccess(ctx context.Context, input store.MetricCollectionStatusInput) error {
+	s.successes = append(s.successes, input)
+	return nil
+}
+
+func (s *fakeStore) RecordMetricCollectionFailure(ctx context.Context, input store.MetricCollectionStatusInput) error {
+	s.failures = append(s.failures, input)
+	return nil
 }
 
 type fakeFetcher struct {
@@ -83,6 +95,9 @@ func TestCollectOnceUsesLookbackAndStoresPoints(t *testing.T) {
 	if len(db.points) != 1 {
 		t.Fatalf("stored point count = %d, want 1", len(db.points))
 	}
+	if len(db.successes) != 1 || db.successes[0].RecentPointCount != 1 {
+		t.Fatalf("unexpected collection successes: %#v", db.successes)
+	}
 }
 
 func TestCollectOnceStoresPointsAfterPartialFetchFailure(t *testing.T) {
@@ -114,6 +129,9 @@ func TestCollectOnceStoresPointsAfterPartialFetchFailure(t *testing.T) {
 	if len(db.points) != 1 {
 		t.Fatalf("stored point count = %d, want 1", len(db.points))
 	}
+	if len(db.successes) != 1 {
+		t.Fatalf("collection successes = %d, want 1", len(db.successes))
+	}
 }
 
 func TestCollectOnceReturnsNonPartialFetchFailure(t *testing.T) {
@@ -131,5 +149,8 @@ func TestCollectOnceReturnsNonPartialFetchFailure(t *testing.T) {
 
 	if _, err := c.CollectOnce(context.Background()); err == nil {
 		t.Fatal("expected fetch failure")
+	}
+	if len(db.failures) != 1 {
+		t.Fatalf("collection failures = %d, want 1", len(db.failures))
 	}
 }

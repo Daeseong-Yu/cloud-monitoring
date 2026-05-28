@@ -36,6 +36,14 @@ type MetricPoint struct {
 	Value              float64
 }
 
+type MetricCollectionStatusInput struct {
+	MetricDefinitionID int64
+	LatestPointAt      time.Time
+	RecentPointCount   int64
+	SanitizedError     string
+	CollectedAt        time.Time
+}
+
 type AdminResource struct {
 	ID                int64  `json:"id"`
 	ServiceName       string `json:"serviceName"`
@@ -45,6 +53,13 @@ type AdminResource struct {
 	DisplayName       string `json:"displayName"`
 	TagsJSON          string `json:"tags"`
 	ProviderSource    string `json:"providerSource"`
+	DiscoverySource   string `json:"discoverySource"`
+	InternalRegion    string `json:"internalRegion"`
+	PublicEnabled     bool   `json:"publicEnabled"`
+	PublicDisplayName string `json:"publicDisplayName"`
+	PublicDescription string `json:"publicDescription"`
+	PublicLabel       string `json:"publicLabel"`
+	PublicSortOrder   int32  `json:"publicSortOrder"`
 	Enabled           bool   `json:"enabled"`
 	DiscoveredMetrics int64  `json:"discoveredMetrics"`
 	AvailableMetrics  int64  `json:"availableMetrics"`
@@ -85,6 +100,8 @@ type AdminMetricDefinition struct {
 	PeriodSeconds  int32  `json:"periodSeconds"`
 	Unit           string `json:"unit"`
 	Enabled        bool   `json:"enabled"`
+	PublicEnabled  bool   `json:"publicEnabled"`
+	PublicLabel    string `json:"publicLabel"`
 }
 
 type MetricDefinitionInput struct {
@@ -174,6 +191,72 @@ func (d MetricDefinition) Dimensions() ([]Dimension, error) {
 	return dimensions, nil
 }
 
+func (s *Store) RecordMetricCollectionSuccess(ctx context.Context, input MetricCollectionStatusInput) error {
+	collectedAt := input.CollectedAt.UTC()
+	if collectedAt.IsZero() {
+		collectedAt = time.Now().UTC()
+	}
+
+	var latestPoint any
+	if !input.LatestPointAt.IsZero() {
+		latestPoint = input.LatestPointAt.UTC()
+	}
+
+	_, err := s.pool.Exec(ctx, `
+INSERT INTO metric_collection_status (
+    metric_definition_id,
+    last_success_at,
+    latest_point_at,
+    recent_point_count,
+    sanitized_error,
+    updated_at
+)
+VALUES ($1, $2, $3, $4, '', now())
+ON CONFLICT (metric_definition_id) DO UPDATE SET
+    last_success_at = EXCLUDED.last_success_at,
+    latest_point_at = COALESCE(EXCLUDED.latest_point_at, metric_collection_status.latest_point_at),
+    recent_point_count = EXCLUDED.recent_point_count,
+    sanitized_error = '',
+    updated_at = now()`,
+		input.MetricDefinitionID,
+		collectedAt,
+		latestPoint,
+		input.RecentPointCount,
+	)
+	if err != nil {
+		return fmt.Errorf("record metric collection success: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) RecordMetricCollectionFailure(ctx context.Context, input MetricCollectionStatusInput) error {
+	collectedAt := input.CollectedAt.UTC()
+	if collectedAt.IsZero() {
+		collectedAt = time.Now().UTC()
+	}
+
+	_, err := s.pool.Exec(ctx, `
+INSERT INTO metric_collection_status (
+    metric_definition_id,
+    last_failure_at,
+    sanitized_error,
+    updated_at
+)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (metric_definition_id) DO UPDATE SET
+    last_failure_at = EXCLUDED.last_failure_at,
+    sanitized_error = EXCLUDED.sanitized_error,
+    updated_at = now()`,
+		input.MetricDefinitionID,
+		collectedAt,
+		input.SanitizedError,
+	)
+	if err != nil {
+		return fmt.Errorf("record metric collection failure: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) InsertMetricPoints(ctx context.Context, points []MetricPoint) (int64, error) {
 	if len(points) == 0 {
 		return 0, nil
@@ -218,6 +301,13 @@ SELECT
     r.display_name,
     r.tags::text,
     COALESCE(r.provider_source, ''),
+    COALESCE(r.discovery_source, ''),
+    COALESCE(NULLIF(r.internal_region_label, ''), r.region),
+    r.public_enabled,
+    r.public_display_name,
+    r.public_description,
+    r.public_label,
+    r.public_sort_order,
     r.enabled,
     COUNT(DISTINCT dm.id) AS discovered_metrics,
     COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'available') AS available_metrics,
@@ -332,7 +422,9 @@ SELECT
     statistic,
     period_seconds,
     COALESCE(unit, ''),
-    enabled
+    enabled,
+    public_enabled,
+    public_label
 FROM metric_definitions
 WHERE ($1 = '' OR region = $1)
 ORDER BY region, resource_id, namespace, metric_name, statistic, period_seconds`
@@ -448,7 +540,27 @@ func (s *Store) DeleteMetricDefinition(ctx context.Context, id int64) error {
 func (s *Store) ApplyRecommendedMetricSet(ctx context.Context, resourceRowID int64, metrics []RecommendedMetric) (int64, error) {
 	var resource AdminResource
 	err := s.pool.QueryRow(ctx, `
-SELECT id, service_name, namespace, resource_id, region, display_name, tags::text, COALESCE(provider_source, ''), enabled, 0::bigint, 0::bigint, 0::bigint, 0::bigint
+SELECT
+    id,
+    service_name,
+    namespace,
+    resource_id,
+    region,
+    display_name,
+    tags::text,
+    COALESCE(provider_source, ''),
+    COALESCE(discovery_source, ''),
+    COALESCE(NULLIF(internal_region_label, ''), region),
+    public_enabled,
+    public_display_name,
+    public_description,
+    public_label,
+    public_sort_order,
+    enabled,
+    0::bigint,
+    0::bigint,
+    0::bigint,
+    0::bigint
 FROM resources
 WHERE id = $1`, resourceRowID).Scan(
 		&resource.ID,
@@ -459,6 +571,13 @@ WHERE id = $1`, resourceRowID).Scan(
 		&resource.DisplayName,
 		&resource.TagsJSON,
 		&resource.ProviderSource,
+		&resource.DiscoverySource,
+		&resource.InternalRegion,
+		&resource.PublicEnabled,
+		&resource.PublicDisplayName,
+		&resource.PublicDescription,
+		&resource.PublicLabel,
+		&resource.PublicSortOrder,
 		&resource.Enabled,
 		&resource.DiscoveredMetrics,
 		&resource.AvailableMetrics,
@@ -561,13 +680,26 @@ func (s *Store) UpsertDiscoveredResources(ctx context.Context, resources []disco
 
 		var resourceRowID int64
 		err = tx.QueryRow(ctx, `
-INSERT INTO resources (service_name, namespace, resource_id, region, display_name, tags, provider_source, enabled)
-VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, FALSE)
+INSERT INTO resources (
+    service_name,
+    namespace,
+    resource_id,
+    region,
+    display_name,
+    tags,
+    provider_source,
+    discovery_source,
+    internal_region_label,
+    enabled
+)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, FALSE)
 ON CONFLICT ON CONSTRAINT resources_unique_resource DO UPDATE SET
     namespace = EXCLUDED.namespace,
     display_name = EXCLUDED.display_name,
     tags = EXCLUDED.tags,
     provider_source = EXCLUDED.provider_source,
+    discovery_source = EXCLUDED.discovery_source,
+    internal_region_label = EXCLUDED.internal_region_label,
     updated_at = now()
 RETURNING id`,
 			resource.ServiceName,
@@ -577,6 +709,8 @@ RETURNING id`,
 			resource.DisplayName,
 			tagsJSON,
 			resource.ProviderSource,
+			defaultString(resource.ProviderSource, "cloudwatch-listmetrics"),
+			resource.Region,
 		).Scan(&resourceRowID)
 		if err != nil {
 			return 0, 0, fmt.Errorf("upsert discovered resource: %w", err)
