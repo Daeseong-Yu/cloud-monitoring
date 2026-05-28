@@ -14,14 +14,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Go test
-        run: go test ./...
-
       - name: Validate
-        run: |
-          sh scripts/validate-step11.sh
-          sh scripts/validate-step12.sh
-          sh scripts/validate-step19.sh
+        run: sh scripts/validate-ci.sh
 
       - name: Gitleaks
         uses: gitleaks/gitleaks-action@v2
