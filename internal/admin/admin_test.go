@@ -21,6 +21,7 @@ type fakeStore struct {
 	bulkSelected    int64
 	bulkEnabled     bool
 	bulkUpdated     int64
+	bulkRecommended store.RecommendedMetricSetApplyResult
 }
 
 func (s *fakeStore) ListAdminServices(context.Context, string) ([]store.AdminService, error) {
@@ -134,6 +135,11 @@ func (s *fakeStore) DeleteMetricDefinition(context.Context, int64) error {
 
 func (s *fakeStore) ApplyRecommendedMetricSet(context.Context, int64, []store.RecommendedMetric) (int64, error) {
 	return 1, nil
+}
+
+func (s *fakeStore) ApplyRecommendedMetricSetToResources(context.Context, string, string, []store.RecommendedMetric) (store.RecommendedMetricSetApplyResult, error) {
+	s.bulkRecommended = store.RecommendedMetricSetApplyResult{ResourceCount: 2, AppliedCount: 8}
+	return s.bulkRecommended, nil
 }
 
 func (s *fakeStore) SelectAvailableMetricCandidates(context.Context, string, string) (int64, error) {
@@ -312,7 +318,7 @@ func TestAdminBulkActionsRequireConfirmation(t *testing.T) {
 		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	for _, expected := range []string{"Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm(", "Bulk preview", "수집 시작 2", "enable 5 / disable 4"} {
+	for _, expected := range []string{"추천 세트 일괄 적용", "Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm(", "Bulk preview", "수집 시작 2", "enable 5 / disable 4"} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("admin page does not include bulk action confirmation marker %q", expected)
 		}
@@ -393,6 +399,41 @@ func TestAPIMetricCandidateSelect(t *testing.T) {
 	}
 	if !st.selectedMetric {
 		t.Fatal("expected metric candidate selection")
+	}
+}
+
+func TestAPIResourcesApplyMetricSet(t *testing.T) {
+	st := &fakeStore{}
+	server, err := NewServer(Config{
+		Store:    st,
+		Username: "admin",
+		Password: "secret",
+		Region:   "us-east-1",
+		MetricSets: []MetricSet{{
+			ServiceName: "lambda",
+			Namespace:   "AWS/Lambda",
+			Name:        "lambda-default",
+			Metrics:     []store.RecommendedMetric{{MetricName: "Errors", Statistic: "Sum", PeriodSeconds: 300, Unit: "Count"}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/resources/apply-metric-set", strings.NewReader(`{"metricSet":"lambda-default"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if st.bulkRecommended.ResourceCount != 2 || st.bulkRecommended.AppliedCount != 8 {
+		t.Fatalf("bulk recommended = %#v, want 2 resources and 8 applied", st.bulkRecommended)
+	}
+	if !strings.Contains(response.Body.String(), `"metricSet":"lambda-default"`) || !strings.Contains(response.Body.String(), `"appliedCount":8`) {
+		t.Fatalf("response does not include recommended metric set result: %s", response.Body.String())
 	}
 }
 

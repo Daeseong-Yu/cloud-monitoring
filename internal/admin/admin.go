@@ -28,6 +28,7 @@ type Store interface {
 	UpdateMetricDefinitionPublicMetadata(context.Context, int64, store.PublicMetadataInput) error
 	DeleteMetricDefinition(context.Context, int64) error
 	ApplyRecommendedMetricSet(context.Context, int64, []store.RecommendedMetric) (int64, error)
+	ApplyRecommendedMetricSetToResources(context.Context, string, string, []store.RecommendedMetric) (store.RecommendedMetricSetApplyResult, error)
 	SelectAvailableMetricCandidates(context.Context, string, string) (int64, error)
 	SelectMetricCandidate(context.Context, int64) (int64, error)
 }
@@ -104,6 +105,7 @@ func (s *Server) Handler() http.Handler {
 	adminMux.HandleFunc("/", s.redirectRoot)
 	adminMux.HandleFunc("/admin", s.handleAdmin)
 	adminMux.HandleFunc("/admin/discovery/run", s.handleRunDiscovery)
+	adminMux.HandleFunc("/admin/resources/apply-metric-set", s.handleAdminResourcesApplyMetricSet)
 	adminMux.HandleFunc("/admin/resources/", s.handleAdminResourceAction)
 	adminMux.HandleFunc("/admin/metric-candidates/select-available", s.handleAdminMetricCandidatesSelectAvailable)
 	adminMux.HandleFunc("/admin/metric-candidates/", s.handleAdminMetricCandidateAction)
@@ -113,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 	adminMux.HandleFunc("/api/services", s.handleAPIServices)
 	adminMux.HandleFunc("/api/cost-estimate", s.handleAPICostEstimate)
 	adminMux.HandleFunc("/api/resources", s.handleAPIResources)
+	adminMux.HandleFunc("/api/resources/apply-metric-set", s.handleAPIResourcesApplyMetricSet)
 	adminMux.HandleFunc("/api/resources/", s.handleAPIResourceAction)
 	adminMux.HandleFunc("/api/metric-candidates", s.handleAPIMetricCandidates)
 	adminMux.HandleFunc("/api/metric-candidates/select-available", s.handleAPIMetricCandidatesSelectAvailable)
@@ -330,6 +333,23 @@ func (s *Server) handleAdminResourceAction(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, "/admin?region="+s.requestRegion(r), http.StatusSeeOther)
 }
 
+func (s *Server) handleAdminResourcesApplyMetricSet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	metricSet, ok := s.metricSetByName(r.FormValue("metric_set"))
+	if !ok {
+		http.Error(w, "metric set not found", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.store.ApplyRecommendedMetricSetToResources(r.Context(), s.requestRegion(r), metricSet.ServiceName, metricSet.Metrics); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/admin?region="+s.requestRegion(r), http.StatusSeeOther)
+}
+
 func (s *Server) handleAdminMetricCandidateAction(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -465,6 +485,40 @@ func (s *Server) handleAPIResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, resources)
+}
+
+func (s *Server) handleAPIResourcesApplyMetricSet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	metricSetName := strings.TrimSpace(r.URL.Query().Get("metricSet"))
+	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		var payload struct {
+			MetricSet string `json:"metricSet"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		metricSetName = strings.TrimSpace(payload.MetricSet)
+	}
+	metricSet, ok := s.metricSetByName(metricSetName)
+	if !ok {
+		http.Error(w, "metric set not found", http.StatusBadRequest)
+		return
+	}
+	result, err := s.store.ApplyRecommendedMetricSetToResources(r.Context(), s.requestRegion(r), metricSet.ServiceName, metricSet.Metrics)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{
+		"metricSet":     metricSet.Name,
+		"serviceName":   metricSet.ServiceName,
+		"resourceCount": result.ResourceCount,
+		"appliedCount":  result.AppliedCount,
+	})
 }
 
 func (s *Server) handleAPIResourceAction(w http.ResponseWriter, r *http.Request) {
@@ -893,6 +947,12 @@ const pageTemplate = `{{define "page"}}<!doctype html>
     </section>
     <section>
       <h2>리소스</h2>
+      <div class="toolbar">
+        <form method="post" action="/admin/resources/apply-metric-set?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 추천 metric set을 해당 서비스의 모든 리소스에 적용할까요? 서비스 표의 리소스 수와 Bulk preview를 확인하세요.');">
+          <select name="metric_set">{{range .MetricSets}}<option value="{{.Name}}">{{.Name}} - {{len .Metrics}} metrics</option>{{end}}</select>
+          <button type="submit">추천 세트 일괄 적용</button>
+        </form>
+      </div>
       <table>
         <thead><tr><th>상태</th><th>서비스</th><th>표시 이름</th><th>Region</th><th>Metric</th><th>Public metadata</th><th>작업</th></tr></thead>
         <tbody>{{range .Resources}}

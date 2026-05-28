@@ -193,6 +193,11 @@ type RecommendedMetric struct {
 	Unit          string `json:"unit"`
 }
 
+type RecommendedMetricSetApplyResult struct {
+	ResourceCount int64 `json:"resourceCount"`
+	AppliedCount  int64 `json:"appliedCount"`
+}
+
 type Store struct {
 	pool *pgxpool.Pool
 }
@@ -1161,6 +1166,48 @@ WHERE id = $1`, resourceRowID).Scan(
 		applied++
 	}
 	return applied, nil
+}
+
+func (s *Store) ApplyRecommendedMetricSetToResources(ctx context.Context, region string, serviceName string, metrics []RecommendedMetric) (RecommendedMetricSetApplyResult, error) {
+	region = strings.TrimSpace(region)
+	serviceName = strings.TrimSpace(serviceName)
+	if serviceName == "" {
+		return RecommendedMetricSetApplyResult{}, fmt.Errorf("service_name is required")
+	}
+
+	rows, err := s.pool.Query(ctx, `
+SELECT id
+FROM resources
+WHERE service_name = $1
+  AND ($2 = '' OR region = $2)
+ORDER BY region, display_name, resource_id`, serviceName, region)
+	if err != nil {
+		return RecommendedMetricSetApplyResult{}, fmt.Errorf("query resources for recommended metric set: %w", err)
+	}
+	defer rows.Close()
+
+	var resourceIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return RecommendedMetricSetApplyResult{}, fmt.Errorf("scan resource for recommended metric set: %w", err)
+		}
+		resourceIDs = append(resourceIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return RecommendedMetricSetApplyResult{}, fmt.Errorf("iterate resources for recommended metric set: %w", err)
+	}
+
+	var result RecommendedMetricSetApplyResult
+	result.ResourceCount = int64(len(resourceIDs))
+	for _, resourceID := range resourceIDs {
+		applied, err := s.ApplyRecommendedMetricSet(ctx, resourceID, metrics)
+		if err != nil {
+			return RecommendedMetricSetApplyResult{}, err
+		}
+		result.AppliedCount += applied
+	}
+	return result, nil
 }
 
 func (s *Store) markDiscoveredMetricSelected(ctx context.Context, resourceRowID int64, metricName string) error {
