@@ -17,6 +17,7 @@ type fakeStore struct {
 	selectedMetric  bool
 	resourcePublic  store.PublicMetadataInput
 	metricPublic    store.PublicMetadataInput
+	publicMetrics   []store.PublicMetric
 }
 
 func (s *fakeStore) ListAdminServices(context.Context, string) ([]store.AdminService, error) {
@@ -68,6 +69,9 @@ func (s *fakeStore) CollectionCostEstimate(context.Context, string, int64) (stor
 }
 
 func (s *fakeStore) ListPublicMetrics(context.Context) ([]store.PublicMetric, error) {
+	if s.publicMetrics != nil {
+		return s.publicMetrics, nil
+	}
 	return []store.PublicMetric{{
 		ID:                  store.PublicMetricID("orders", "errors"),
 		ResourceAlias:       "orders",
@@ -155,6 +159,24 @@ func TestPublicMetricsDoNotRequireBasicAuth(t *testing.T) {
 	}
 	if !strings.Contains(body, "resourceAlias") || !strings.Contains(body, "metricAlias") {
 		t.Fatalf("public response does not include aliases: %s", body)
+	}
+}
+
+func TestPublicMetricsEmptyResponseIsArray(t *testing.T) {
+	server, err := NewServer(Config{Store: &fakeStore{publicMetrics: []store.PublicMetric{}}, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/public/metrics", nil)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if strings.TrimSpace(response.Body.String()) != "[]" {
+		t.Fatalf("body = %s, want []", response.Body.String())
 	}
 }
 

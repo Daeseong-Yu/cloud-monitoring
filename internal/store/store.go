@@ -602,7 +602,7 @@ ORDER BY r.public_sort_order, r.public_label, md.public_sort_order, md.public_la
 	}
 	defer rows.Close()
 
-	var metrics []PublicMetric
+	metrics := []PublicMetric{}
 	for rows.Next() {
 		var metric PublicMetric
 		if err := rows.Scan(
