@@ -326,12 +326,14 @@ curl -fsS -u "$ADMIN_USERNAME:$ADMIN_PASSWORD" \
   "${ADMIN_URL:-http://127.0.0.1:${ADMIN_HTTP_PORT:-8080}}/api/resources?region=$AWS_REGION" | jq .
 ```
 
-resource가 보이면 각 row에서 추천 metric set을 적용합니다.
+resource가 보이면 서비스 표의 resource 수와 Bulk preview를 먼저 확인한 뒤, `리소스` 섹션의 `추천 세트 일괄 적용`으로 서비스별 recommended metric을 적용합니다.
 
 - EC2: `ec2-default`
 - Lambda: `lambda-default`
 
-`추천 적용` 후 다시 새로고침합니다. 아래 `Metric Definition` 섹션에 `enabled` metric definition이 생겨야 합니다.
+`추천 세트 일괄 적용` 후 다시 새로고침합니다. 아래 `Metric Definition` 섹션에 `enabled` metric definition이 생겨야 합니다.
+
+추가 지표가 필요할 때만 `Metric 후보`의 `Advanced candidate bulk actions` 또는 개별 `수집 시작`을 사용합니다. 기본 설정 흐름은 추천 세트 일괄 적용입니다.
 
 터미널 확인:
 
@@ -545,7 +547,7 @@ docker compose up -d --build postgres grafana admin-ui
 
 확인 순서:
 
-1. Admin UI에서 추천 metric set을 적용했는지 확인합니다.
+1. Admin UI에서 추천 metric set을 일괄 적용했는지 확인합니다.
 2. `/api/metric-definitions?region=$AWS_REGION`에 `enabled: true` 항목이 있는지 확인합니다.
 3. `docker compose --profile collector run --rm collector /app/collector --once`를 실행합니다.
 4. CloudWatch에 해당 metric과 dimension이 실제로 존재하는지 확인합니다.

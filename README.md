@@ -18,7 +18,7 @@ Grafana는 CloudWatch를 직접 조회하지 않습니다. CloudWatch API 호출
 - AWS CloudWatch metric discovery
 - EC2, Lambda, CWAgent metric 후보 탐색
 - Admin UI를 통한 resource discovery 실행과 metric definition 관리
-- EC2/Lambda 추천 metric set 적용
+- 서비스별 추천 metric set 일괄 적용
 - Go collector의 주기적 CloudWatch `GetMetricData` 수집
 - PostgreSQL metric 저장소
 - Grafana PostgreSQL datasource provisioning
@@ -61,9 +61,11 @@ Docker Compose 서비스:
 1. PostgreSQL, Grafana, Admin UI를 기동합니다.
 2. Schema migration을 적용합니다.
 3. Admin UI에서 `Discovery 실행`을 누릅니다.
-4. 발견된 resource에 추천 metric set을 적용합니다.
-5. Collector를 실행해 CloudWatch metric을 PostgreSQL에 저장합니다.
-6. 내부 Grafana dashboard에서 PostgreSQL에 저장된 metric을 조회합니다.
+4. 서비스 표의 resource 수와 Bulk preview를 확인합니다.
+5. `추천 세트 일괄 적용`으로 서비스별 recommended metric을 먼저 적용합니다.
+6. 추가 지표가 필요할 때만 advanced candidate bulk action 또는 개별 후보 선택을 사용합니다.
+7. Collector를 실행해 CloudWatch metric을 PostgreSQL에 저장합니다.
+8. 내부 Grafana dashboard에서 PostgreSQL에 저장된 metric을 조회합니다.
 
 ## 빠른 설치 흐름
 
@@ -144,7 +146,7 @@ Public API 응답에는 raw resource id, AWS account id, full ARN, raw tags, cre
 
 - 공개 URL, domain, 서버 IP, credential은 tracked file에 기록하지 않습니다.
 - Admin UI는 내부망, VPN, 또는 IP allowlist 뒤에 두고 `/public/overview`만 외부 노출 대상으로 검토합니다.
-- 공개할 resource와 metric definition은 Admin UI public metadata에서 명시적으로 opt-in합니다.
+- 현재 public metadata 편집은 Admin UI의 advanced 섹션에 둔 임시 테스트용 기능입니다. 대량 공개 UX는 추후 별도 설계로 개편합니다.
 - 공개 화면은 public API만 호출하며 Grafana public dashboard를 portfolio surface로 사용하지 않습니다.
 - 배포 전 `sh scripts/validate-productization.sh`와 `RUN_GITLEAKS=1 sh scripts/scan-secrets.sh`를 실행합니다.
 
