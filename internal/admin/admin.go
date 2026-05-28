@@ -879,15 +879,16 @@ const pageTemplate = `{{define "page"}}<!doctype html>
       </div>
       <p class="muted">{{.Cost.PricingNote}}</p>
       <table>
-        <thead><tr><th>서비스</th><th>리소스</th><th>Metric 후보</th><th>선택</th></tr></thead>
+        <thead><tr><th>서비스</th><th>리소스</th><th>Metric 후보</th><th>선택</th><th>Bulk preview</th></tr></thead>
         <tbody>{{range .Services}}
           <tr>
             <td>{{.ServiceName}}<br><span class="muted">{{.Namespace}}</span></td>
             <td>{{.ResourceCount}}</td>
             <td>available {{.AvailableMetrics}} / setup {{.RequiresSetup}} / unsupported {{.UnsupportedMetrics}}</td>
             <td>{{.SelectedMetrics}}</td>
+            <td>수집 시작 {{.UnselectedAvailableMetrics}} / enable {{.DisabledMetricDefinitions}} / disable {{.EnabledMetricDefinitions}}</td>
           </tr>
-        {{else}}<tr><td colspan="4" class="muted">Discovery를 실행하면 서비스가 표시됩니다.</td></tr>{{end}}</tbody>
+        {{else}}<tr><td colspan="5" class="muted">Discovery를 실행하면 서비스가 표시됩니다.</td></tr>{{end}}</tbody>
       </table>
     </section>
     <section>
@@ -928,10 +929,10 @@ const pageTemplate = `{{define "page"}}<!doctype html>
     <section>
       <h2>Metric 후보</h2>
       <div class="toolbar">
-        <form method="post" action="/admin/metric-candidates/select-available?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 available metric 후보를 일괄 수집 시작할까요?');">
+        <form method="post" action="/admin/metric-candidates/select-available?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 available metric 후보를 일괄 수집 시작할까요? 서비스 표의 Bulk preview에서 예상 개수를 확인하세요.');">
           <select name="service_name">
             <option value="">전체 서비스</option>
-            {{range .Services}}<option value="{{.ServiceName}}">{{.ServiceName}}</option>{{end}}
+            {{range .Services}}<option value="{{.ServiceName}}">{{.ServiceName}} - 수집 시작 {{.UnselectedAvailableMetrics}}</option>{{end}}
           </select>
           <button type="submit">Available 일괄 수집 시작</button>
         </form>
@@ -959,10 +960,10 @@ const pageTemplate = `{{define "page"}}<!doctype html>
     <section>
       <h2>Metric Definition</h2>
       <div class="toolbar">
-        <form method="post" action="/admin/metric-definitions/bulk-enabled?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 metric definition 상태를 일괄 변경할까요?');">
+        <form method="post" action="/admin/metric-definitions/bulk-enabled?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 metric definition 상태를 일괄 변경할까요? 서비스 표의 Bulk preview에서 예상 개수를 확인하세요.');">
           <select name="service_name">
             <option value="">전체 서비스</option>
-            {{range .Services}}<option value="{{.ServiceName}}">{{.ServiceName}}</option>{{end}}
+            {{range .Services}}<option value="{{.ServiceName}}">{{.ServiceName}} - enable {{.DisabledMetricDefinitions}} / disable {{.EnabledMetricDefinitions}}</option>{{end}}
           </select>
           <button type="submit" name="enabled" value="true">일괄 Enable</button>
           <button type="submit" name="enabled" value="false" class="secondary">일괄 Disable</button>

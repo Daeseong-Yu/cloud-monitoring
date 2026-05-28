@@ -24,7 +24,16 @@ type fakeStore struct {
 }
 
 func (s *fakeStore) ListAdminServices(context.Context, string) ([]store.AdminService, error) {
-	return []store.AdminService{{ServiceName: "lambda", Namespace: "AWS/Lambda", ResourceCount: 1, AvailableMetrics: 1}}, nil
+	return []store.AdminService{{
+		ServiceName:                "lambda",
+		Namespace:                  "AWS/Lambda",
+		ResourceCount:              1,
+		AvailableMetrics:           3,
+		UnselectedAvailableMetrics: 2,
+		SelectedMetrics:            1,
+		EnabledMetricDefinitions:   4,
+		DisabledMetricDefinitions:  5,
+	}}, nil
 }
 
 func (s *fakeStore) ListAdminResources(context.Context, string) ([]store.AdminResource, error) {
@@ -303,7 +312,7 @@ func TestAdminBulkActionsRequireConfirmation(t *testing.T) {
 		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	for _, expected := range []string{"Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm("} {
+	for _, expected := range []string{"Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm(", "Bulk preview", "수집 시작 2", "enable 5 / disable 4"} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("admin page does not include bulk action confirmation marker %q", expected)
 		}

@@ -77,13 +77,16 @@ type AdminResource struct {
 }
 
 type AdminService struct {
-	ServiceName        string `json:"serviceName"`
-	Namespace          string `json:"namespace"`
-	ResourceCount      int64  `json:"resourceCount"`
-	AvailableMetrics   int64  `json:"availableMetrics"`
-	RequiresSetup      int64  `json:"requiresSetup"`
-	UnsupportedMetrics int64  `json:"unsupportedMetrics"`
-	SelectedMetrics    int64  `json:"selectedMetrics"`
+	ServiceName                string `json:"serviceName"`
+	Namespace                  string `json:"namespace"`
+	ResourceCount              int64  `json:"resourceCount"`
+	AvailableMetrics           int64  `json:"availableMetrics"`
+	UnselectedAvailableMetrics int64  `json:"unselectedAvailableMetrics"`
+	RequiresSetup              int64  `json:"requiresSetup"`
+	UnsupportedMetrics         int64  `json:"unsupportedMetrics"`
+	SelectedMetrics            int64  `json:"selectedMetrics"`
+	EnabledMetricDefinitions   int64  `json:"enabledMetricDefinitions"`
+	DisabledMetricDefinitions  int64  `json:"disabledMetricDefinitions"`
 }
 
 type AdminMetricCandidate struct {
@@ -401,11 +404,18 @@ SELECT
     r.namespace,
     COUNT(DISTINCT r.id) AS resource_count,
     COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'available') AS available_metrics,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'available' AND dm.selected = FALSE) AS unselected_available_metrics,
     COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'requires_setup') AS requires_setup,
     COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'unsupported') AS unsupported_metrics,
-    COUNT(DISTINCT dm.id) FILTER (WHERE dm.selected = TRUE) AS selected_metrics
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.selected = TRUE) AS selected_metrics,
+    COUNT(DISTINCT md.id) FILTER (WHERE md.enabled = TRUE) AS enabled_metric_definitions,
+    COUNT(DISTINCT md.id) FILTER (WHERE md.enabled = FALSE) AS disabled_metric_definitions
 FROM resources r
 LEFT JOIN discovered_metrics dm ON dm.resource_id = r.id
+LEFT JOIN metric_definitions md
+    ON md.resource_id = r.resource_id
+    AND md.region = r.region
+    AND md.service_name = r.service_name
 WHERE ($1 = '' OR r.region = $1)
 GROUP BY r.service_name, r.namespace
 ORDER BY r.service_name, r.namespace`
