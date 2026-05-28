@@ -1,5 +1,6 @@
 .ai/
 .cache/
+.deploy/
 .git/
 bin/
 data/

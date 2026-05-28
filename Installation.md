@@ -220,6 +220,22 @@ unset AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
 ```
 
+## 6.1. GitHub Actions 배포 준비
+
+최초 설치 후 반복 배포는 GitHub Actions의 SSH source deployment를 사용할 수 있습니다. 이 방식은 GHCR 또는 GitHub Packages를 사용하지 않고, 운영 서버에서 source checkout과 Docker Compose build를 수행합니다.
+
+GitHub repository 또는 production environment에 아래 secret을 등록합니다.
+
+- `DEPLOY_HOST`
+- `DEPLOY_USER`
+- `DEPLOY_PORT`
+- `DEPLOY_SSH_KEY`
+- `DEPLOY_PATH`
+
+운영 runtime secret과 AWS credential은 GitHub에 저장하지 않습니다. 기존처럼 `/etc/cloud-monitor/cloud-monitor.env`와 `/etc/cloud-monitor/aws`에만 둡니다.
+
+배포는 GitHub Actions의 `deploy` workflow를 수동 실행합니다. 자세한 절차는 [docs/operations/deployment.md](docs/operations/deployment.md)를 참고합니다.
+
 ## 7. PostgreSQL, Grafana, Admin UI 기동
 
 ```bash
@@ -534,4 +550,3 @@ docker compose up -d --build postgres grafana admin-ui
 3. `docker compose --profile collector run --rm collector /app/collector --once`를 실행합니다.
 4. CloudWatch에 해당 metric과 dimension이 실제로 존재하는지 확인합니다.
 5. Lambda/EC2가 최근 기간에 traffic 또는 metric data point를 냈는지 확인합니다.
-

@@ -11,6 +11,7 @@ Grafana는 CloudWatch를 직접 조회하지 않습니다. CloudWatch API 호출
 - [docs/operations/scheduling.md](docs/operations/scheduling.md): collector와 systemd timer 운영
 - [docs/operations/backup-restore.md](docs/operations/backup-restore.md): PostgreSQL backup, restore, migration
 - [docs/operations/security-hardening.md](docs/operations/security-hardening.md): reverse proxy, secret, IAM hardening
+- [docs/operations/deployment.md](docs/operations/deployment.md): GitHub Actions SSH source 배포와 rollback
 
 ## 구현 범위
 
@@ -26,6 +27,7 @@ Grafana는 CloudWatch를 직접 조회하지 않습니다. CloudWatch API 호출
 - PostgreSQL backup, migration, health validation script
 - Docker Compose 기반 운영 runtime
 - systemd timer 기반 one-shot job scheduling
+- GitHub Actions 기반 SSH source deployment
 
 ## 주요 설계 원칙
 
