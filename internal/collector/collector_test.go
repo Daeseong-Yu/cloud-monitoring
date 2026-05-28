@@ -23,9 +23,13 @@ func (s *fakeStore) EnabledMetricDefinitions(ctx context.Context, region string)
 	return s.definitions, nil
 }
 
-func (s *fakeStore) InsertMetricPoints(ctx context.Context, points []store.MetricPoint) (int64, error) {
+func (s *fakeStore) InsertMetricPointsDetailed(ctx context.Context, points []store.MetricPoint) (store.MetricInsertSummary, error) {
 	s.points = append(s.points, points...)
-	return s.inserted, nil
+	insertedByDefinition := map[int64]int64{}
+	for _, point := range points {
+		insertedByDefinition[point.MetricDefinitionID]++
+	}
+	return store.MetricInsertSummary{Inserted: s.inserted, InsertedByDefinition: insertedByDefinition}, nil
 }
 
 func (s *fakeStore) RecordMetricCollectionSuccess(ctx context.Context, input store.MetricCollectionStatusInput) error {
@@ -52,7 +56,8 @@ func (f *fakeFetcher) Fetch(ctx context.Context, definitions []store.MetricDefin
 }
 
 type fakePartialFetchError struct {
-	skipped int
+	skipped   int
+	failedIDs []int64
 }
 
 func (e fakePartialFetchError) Error() string {
@@ -61,6 +66,10 @@ func (e fakePartialFetchError) Error() string {
 
 func (e fakePartialFetchError) SkippedDefinitions() int {
 	return e.skipped
+}
+
+func (e fakePartialFetchError) FailedDefinitionIDs() []int64 {
+	return e.failedIDs
 }
 
 func TestCollectOnceUsesLookbackAndStoresPoints(t *testing.T) {
@@ -95,7 +104,7 @@ func TestCollectOnceUsesLookbackAndStoresPoints(t *testing.T) {
 	if len(db.points) != 1 {
 		t.Fatalf("stored point count = %d, want 1", len(db.points))
 	}
-	if len(db.successes) != 1 || db.successes[0].RecentPointCount != 1 {
+	if len(db.successes) != 1 || db.successes[0].FetchedPointCount != 1 || db.successes[0].InsertedPointCount != 1 {
 		t.Fatalf("unexpected collection successes: %#v", db.successes)
 	}
 }
@@ -108,7 +117,7 @@ func TestCollectOnceStoresPointsAfterPartialFetchFailure(t *testing.T) {
 	}
 	fetcher := &fakeFetcher{
 		points: []store.MetricPoint{{MetricDefinitionID: 1, Timestamp: now, Value: 10}},
-		err:    fakePartialFetchError{skipped: 1},
+		err:    fakePartialFetchError{skipped: 1, failedIDs: []int64{2}},
 	}
 
 	c := New(config.Config{
@@ -129,8 +138,11 @@ func TestCollectOnceStoresPointsAfterPartialFetchFailure(t *testing.T) {
 	if len(db.points) != 1 {
 		t.Fatalf("stored point count = %d, want 1", len(db.points))
 	}
-	if len(db.successes) != 1 {
-		t.Fatalf("collection successes = %d, want 1", len(db.successes))
+	if len(db.successes) != 2 {
+		t.Fatalf("collection successes = %d, want 2", len(db.successes))
+	}
+	if len(db.failures) != 1 || db.failures[0].MetricDefinitionID != 2 {
+		t.Fatalf("collection failures = %#v, want failed definition 2", db.failures)
 	}
 }
 

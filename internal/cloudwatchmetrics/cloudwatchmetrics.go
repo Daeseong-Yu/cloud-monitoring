@@ -52,16 +52,18 @@ func (f Fetcher) Fetch(ctx context.Context, definitions []store.MetricDefinition
 
 	if len(failures) > 0 {
 		return points, PartialFailure{
-			Skipped: skippedDefinitions,
-			Cause:   errors.Join(failures...),
+			Skipped:   skippedDefinitions,
+			FailedIDs: failedDefinitionIDsFromErrors(failures),
+			Cause:     errors.Join(failures...),
 		}
 	}
 	return points, nil
 }
 
 type PartialFailure struct {
-	Skipped int
-	Cause   error
+	Skipped   int
+	FailedIDs []int64
+	Cause     error
 }
 
 func (e PartialFailure) Error() string {
@@ -74,6 +76,10 @@ func (e PartialFailure) Unwrap() error {
 
 func (e PartialFailure) SkippedDefinitions() int {
 	return e.Skipped
+}
+
+func (e PartialFailure) FailedDefinitionIDs() []int64 {
+	return append([]int64(nil), e.FailedIDs...)
 }
 
 func (f Fetcher) fetchBatchTolerant(ctx context.Context, definitions []store.MetricDefinition, startTime time.Time, endTime time.Time) ([]store.MetricPoint, int, error) {
@@ -92,7 +98,7 @@ func (f Fetcher) fetchBatchTolerant(ctx context.Context, definitions []store.Met
 		points, err := f.fetchBatch(ctx, []store.MetricDefinition{definition}, startTime, endTime)
 		if err != nil {
 			skipped++
-			failures = append(failures, err)
+			failures = append(failures, definitionFetchError{definitionID: definition.ID, cause: err})
 			continue
 		}
 		allPoints = append(allPoints, points...)
@@ -101,6 +107,30 @@ func (f Fetcher) fetchBatchTolerant(ctx context.Context, definitions []store.Met
 		return allPoints, skipped, errors.Join(failures...)
 	}
 	return allPoints, 0, nil
+}
+
+type definitionFetchError struct {
+	definitionID int64
+	cause        error
+}
+
+func (e definitionFetchError) Error() string {
+	return e.cause.Error()
+}
+
+func (e definitionFetchError) Unwrap() error {
+	return e.cause
+}
+
+func failedDefinitionIDsFromErrors(errs []error) []int64 {
+	var ids []int64
+	for _, err := range errs {
+		var definitionErr definitionFetchError
+		if errors.As(err, &definitionErr) {
+			ids = append(ids, definitionErr.definitionID)
+		}
+	}
+	return ids
 }
 
 func (f Fetcher) fetchBatch(ctx context.Context, definitions []store.MetricDefinition, startTime time.Time, endTime time.Time) ([]store.MetricPoint, error) {

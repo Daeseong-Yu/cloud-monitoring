@@ -52,6 +52,19 @@ func (s *fakeStore) ListAdminMetricCandidates(context.Context, string) ([]store.
 	}}, nil
 }
 
+func (s *fakeStore) CollectionCostEstimate(context.Context, string, int64) (store.CollectionCostEstimate, error) {
+	return store.CollectionCostEstimate{
+		EnabledMetricCount:             1,
+		RegionCount:                    1,
+		CollectorIntervalSeconds:       60,
+		MonthlyCollectionRunsPerRegion: 43200,
+		MonthlyMetricRequests:          43200,
+		GetMetricDataPricePerThousand:  0.01,
+		EstimatedMonthlyCostUSD:        0.432,
+		PricingNote:                    "test estimate",
+	}, nil
+}
+
 func (s *fakeStore) ListAdminMetricDefinitions(context.Context, string) ([]store.AdminMetricDefinition, error) {
 	return nil, nil
 }
@@ -153,6 +166,25 @@ func TestAPIServicesUsesBasicAuth(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "resourceCount") {
 		t.Fatalf("response does not include service summary: %s", response.Body.String())
+	}
+}
+
+func TestAPICostEstimateUsesBasicAuth(t *testing.T) {
+	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/cost-estimate", nil)
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "estimatedMonthlyCostUsd") {
+		t.Fatalf("response does not include cost estimate: %s", response.Body.String())
 	}
 }
 

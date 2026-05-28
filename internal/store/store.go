@@ -41,8 +41,15 @@ type MetricCollectionStatusInput struct {
 	MetricDefinitionID int64
 	LatestPointAt      time.Time
 	RecentPointCount   int64
+	FetchedPointCount  int64
+	InsertedPointCount int64
 	SanitizedError     string
 	CollectedAt        time.Time
+}
+
+type MetricInsertSummary struct {
+	Inserted             int64
+	InsertedByDefinition map[int64]int64
 }
 
 type AdminResource struct {
@@ -100,19 +107,39 @@ type AdminMetricCandidate struct {
 }
 
 type AdminMetricDefinition struct {
-	ID             int64  `json:"id"`
-	ServiceName    string `json:"serviceName"`
-	Namespace      string `json:"namespace"`
-	MetricName     string `json:"metricName"`
-	ResourceID     string `json:"resourceId"`
-	Region         string `json:"region"`
-	DimensionsJSON string `json:"dimensions"`
-	Statistic      string `json:"statistic"`
-	PeriodSeconds  int32  `json:"periodSeconds"`
-	Unit           string `json:"unit"`
-	Enabled        bool   `json:"enabled"`
-	PublicEnabled  bool   `json:"publicEnabled"`
-	PublicLabel    string `json:"publicLabel"`
+	ID                 int64  `json:"id"`
+	ServiceName        string `json:"serviceName"`
+	Namespace          string `json:"namespace"`
+	MetricName         string `json:"metricName"`
+	ResourceID         string `json:"resourceId"`
+	Region             string `json:"region"`
+	DimensionsJSON     string `json:"dimensions"`
+	Statistic          string `json:"statistic"`
+	PeriodSeconds      int32  `json:"periodSeconds"`
+	Unit               string `json:"unit"`
+	Enabled            bool   `json:"enabled"`
+	PublicEnabled      bool   `json:"publicEnabled"`
+	PublicLabel        string `json:"publicLabel"`
+	LastRunStatus      string `json:"lastRunStatus"`
+	LastSuccessAt      string `json:"lastSuccessAt"`
+	LastFailureAt      string `json:"lastFailureAt"`
+	LatestPointAt      string `json:"latestPointAt"`
+	FetchedPointCount  int64  `json:"fetchedPointCount"`
+	InsertedPointCount int64  `json:"insertedPointCount"`
+	RecentPointCount   int64  `json:"recentPointCount"`
+	SanitizedError     string `json:"sanitizedError"`
+}
+
+type CollectionCostEstimate struct {
+	EnabledMetricCount             int64   `json:"enabledMetricCount"`
+	RegionCount                    int64   `json:"regionCount"`
+	CollectorIntervalSeconds       int64   `json:"collectorIntervalSeconds"`
+	MonthlyCollectionRunsPerRegion int64   `json:"monthlyCollectionRunsPerRegion"`
+	MonthlyMetricRequests          int64   `json:"monthlyMetricRequests"`
+	GetMetricDataPricePerThousand  float64 `json:"getMetricDataPricePerThousand"`
+	EstimatedMonthlyCostUSD        float64 `json:"estimatedMonthlyCostUsd"`
+	CostWarningMetricCount         int64   `json:"costWarningMetricCount"`
+	PricingNote                    string  `json:"pricingNote"`
 }
 
 type MetricDefinitionInput struct {
@@ -227,20 +254,28 @@ INSERT INTO metric_collection_status (
     last_success_at,
     latest_point_at,
     recent_point_count,
+    fetched_point_count,
+    inserted_point_count,
+    last_run_status,
     sanitized_error,
     updated_at
 )
-VALUES ($1, $2, $3, $4, '', now())
+VALUES ($1, $2, $3, $4, $5, $6, 'success', '', now())
 ON CONFLICT (metric_definition_id) DO UPDATE SET
     last_success_at = EXCLUDED.last_success_at,
     latest_point_at = COALESCE(EXCLUDED.latest_point_at, metric_collection_status.latest_point_at),
     recent_point_count = EXCLUDED.recent_point_count,
+    fetched_point_count = EXCLUDED.fetched_point_count,
+    inserted_point_count = EXCLUDED.inserted_point_count,
+    last_run_status = 'success',
     sanitized_error = '',
     updated_at = now()`,
 		input.MetricDefinitionID,
 		collectedAt,
 		latestPoint,
 		input.RecentPointCount,
+		input.FetchedPointCount,
+		input.InsertedPointCount,
 	)
 	if err != nil {
 		return fmt.Errorf("record metric collection success: %w", err)
@@ -258,12 +293,14 @@ func (s *Store) RecordMetricCollectionFailure(ctx context.Context, input MetricC
 INSERT INTO metric_collection_status (
     metric_definition_id,
     last_failure_at,
+    last_run_status,
     sanitized_error,
     updated_at
 )
-VALUES ($1, $2, $3, now())
+VALUES ($1, $2, 'failure', $3, now())
 ON CONFLICT (metric_definition_id) DO UPDATE SET
     last_failure_at = EXCLUDED.last_failure_at,
+    last_run_status = 'failure',
     sanitized_error = EXCLUDED.sanitized_error,
     updated_at = now()`,
 		input.MetricDefinitionID,
@@ -277,17 +314,25 @@ ON CONFLICT (metric_definition_id) DO UPDATE SET
 }
 
 func (s *Store) InsertMetricPoints(ctx context.Context, points []MetricPoint) (int64, error) {
+	summary, err := s.InsertMetricPointsDetailed(ctx, points)
+	if err != nil {
+		return 0, err
+	}
+	return summary.Inserted, nil
+}
+
+func (s *Store) InsertMetricPointsDetailed(ctx context.Context, points []MetricPoint) (MetricInsertSummary, error) {
 	if len(points) == 0 {
-		return 0, nil
+		return MetricInsertSummary{InsertedByDefinition: map[int64]int64{}}, nil
 	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("begin metric point insert: %w", err)
+		return MetricInsertSummary{}, fmt.Errorf("begin metric point insert: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	var inserted int64
+	summary := MetricInsertSummary{InsertedByDefinition: map[int64]int64{}}
 	for _, point := range points {
 		tag, err := tx.Exec(ctx, `
 INSERT INTO metric_points (metric_definition_id, timestamp, value)
@@ -298,15 +343,17 @@ ON CONFLICT ON CONSTRAINT metric_points_unique_point DO NOTHING`,
 			point.Value,
 		)
 		if err != nil {
-			return 0, fmt.Errorf("insert metric point: %w", err)
+			return MetricInsertSummary{}, fmt.Errorf("insert metric point: %w", err)
 		}
-		inserted += tag.RowsAffected()
+		inserted := tag.RowsAffected()
+		summary.Inserted += inserted
+		summary.InsertedByDefinition[point.MetricDefinitionID] += inserted
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit metric point insert: %w", err)
+		return MetricInsertSummary{}, fmt.Errorf("commit metric point insert: %w", err)
 	}
-	return inserted, nil
+	return summary, nil
 }
 
 func (s *Store) ListAdminServices(ctx context.Context, region string) ([]AdminService, error) {
@@ -489,22 +536,31 @@ WHERE id = $1`,
 func (s *Store) ListAdminMetricDefinitions(ctx context.Context, region string) ([]AdminMetricDefinition, error) {
 	const query = `
 SELECT
-    id,
-    service_name,
-    namespace,
-    metric_name,
-    resource_id,
-    region,
-    COALESCE(dimensions, '[]'::jsonb)::text,
-    statistic,
-    period_seconds,
-    COALESCE(unit, ''),
-    enabled,
-    public_enabled,
-    public_label
-FROM metric_definitions
-WHERE ($1 = '' OR region = $1)
-ORDER BY region, resource_id, namespace, metric_name, statistic, period_seconds`
+    md.id,
+    md.service_name,
+    md.namespace,
+    md.metric_name,
+    md.resource_id,
+    md.region,
+    COALESCE(md.dimensions, '[]'::jsonb)::text,
+    md.statistic,
+    md.period_seconds,
+    COALESCE(md.unit, ''),
+    md.enabled,
+    md.public_enabled,
+    md.public_label,
+    COALESCE(mcs.last_run_status, 'unknown'),
+    COALESCE(mcs.last_success_at::text, ''),
+    COALESCE(mcs.last_failure_at::text, ''),
+    COALESCE(mcs.latest_point_at::text, ''),
+    COALESCE(mcs.fetched_point_count, 0),
+    COALESCE(mcs.inserted_point_count, 0),
+    COALESCE(mcs.recent_point_count, 0),
+    COALESCE(mcs.sanitized_error, '')
+FROM metric_definitions md
+LEFT JOIN metric_collection_status mcs ON mcs.metric_definition_id = md.id
+WHERE ($1 = '' OR md.region = $1)
+ORDER BY md.region, md.resource_id, md.namespace, md.metric_name, md.statistic, md.period_seconds`
 
 	rows, err := s.pool.Query(ctx, query, region)
 	if err != nil {
@@ -517,6 +573,59 @@ ORDER BY region, resource_id, namespace, metric_name, statistic, period_seconds`
 		return nil, fmt.Errorf("scan admin metric definitions: %w", err)
 	}
 	return definitions, nil
+}
+
+func (s *Store) CollectionCostEstimate(ctx context.Context, region string, intervalSeconds int64) (CollectionCostEstimate, error) {
+	if intervalSeconds <= 0 {
+		intervalSeconds = 60
+	}
+
+	var enabledMetricCount int64
+	var regionCount int64
+	var costWarningMetricCount int64
+	err := s.pool.QueryRow(ctx, `
+SELECT
+    COUNT(*) FILTER (WHERE md.enabled = TRUE) AS enabled_metric_count,
+    COUNT(DISTINCT md.region) FILTER (WHERE md.enabled = TRUE) AS region_count,
+    COUNT(*) FILTER (
+        WHERE md.enabled = TRUE
+          AND EXISTS (
+              SELECT 1
+              FROM discovered_metrics dm
+              JOIN resources r ON r.id = dm.resource_id
+              WHERE r.resource_id = md.resource_id
+                AND dm.region = md.region
+                AND dm.namespace = md.namespace
+                AND dm.metric_name = md.metric_name
+                AND dm.statistic = md.statistic
+                AND dm.period_seconds = md.period_seconds
+                AND dm.cost_warning <> ''
+          )
+    ) AS cost_warning_metric_count
+FROM metric_definitions md
+WHERE ($1 = '' OR md.region = $1)`, region).Scan(
+		&enabledMetricCount,
+		&regionCount,
+		&costWarningMetricCount,
+	)
+	if err != nil {
+		return CollectionCostEstimate{}, fmt.Errorf("query collection cost estimate: %w", err)
+	}
+
+	monthlyRuns := int64(30*24*60*60) / intervalSeconds
+	monthlyMetricRequests := enabledMetricCount * monthlyRuns
+	pricePerThousand := 0.01
+	return CollectionCostEstimate{
+		EnabledMetricCount:             enabledMetricCount,
+		RegionCount:                    regionCount,
+		CollectorIntervalSeconds:       intervalSeconds,
+		MonthlyCollectionRunsPerRegion: monthlyRuns,
+		MonthlyMetricRequests:          monthlyMetricRequests,
+		GetMetricDataPricePerThousand:  pricePerThousand,
+		EstimatedMonthlyCostUSD:        float64(monthlyMetricRequests) * pricePerThousand / 1000,
+		CostWarningMetricCount:         costWarningMetricCount,
+		PricingNote:                    "Estimate uses CloudWatch GetMetricData USD 0.01 per 1,000 metrics requested; pricing checked 2026-05-28.",
+	}, nil
 }
 
 func (s *Store) UpsertMetricDefinition(ctx context.Context, input MetricDefinitionInput) (int64, error) {

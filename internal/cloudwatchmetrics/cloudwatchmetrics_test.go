@@ -174,6 +174,10 @@ func TestFetchRetriesBatchAsSingleDefinitionsAndReturnsPartialFailure(t *testing
 	if partial.SkippedDefinitions() != 1 {
 		t.Fatalf("skipped definitions = %d, want 1", partial.SkippedDefinitions())
 	}
+	failedIDs := partial.FailedDefinitionIDs()
+	if len(failedIDs) != 1 || failedIDs[0] != 2 {
+		t.Fatalf("failed definition ids = %#v, want [2]", failedIDs)
+	}
 	if got, want := len(points), 1; got != want {
 		t.Fatalf("point count = %d, want %d", got, want)
 	}

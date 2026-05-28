@@ -16,6 +16,7 @@ type Store interface {
 	ListAdminServices(context.Context, string) ([]store.AdminService, error)
 	ListAdminResources(context.Context, string) ([]store.AdminResource, error)
 	ListAdminMetricCandidates(context.Context, string) ([]store.AdminMetricCandidate, error)
+	CollectionCostEstimate(context.Context, string, int64) (store.CollectionCostEstimate, error)
 	SetResourceEnabled(context.Context, int64, bool) error
 	UpdateResourcePublicMetadata(context.Context, int64, store.PublicMetadataInput) error
 	ListAdminMetricDefinitions(context.Context, string) ([]store.AdminMetricDefinition, error)
@@ -44,6 +45,7 @@ type Server struct {
 	username   string
 	password   string
 	region     string
+	interval   int64
 	metricSets []MetricSet
 	templates  *template.Template
 }
@@ -54,6 +56,7 @@ type Config struct {
 	Username   string
 	Password   string
 	Region     string
+	Interval   int64
 	MetricSets []MetricSet
 }
 
@@ -71,12 +74,17 @@ func NewServer(cfg Config) (*Server, error) {
 	if region == "" {
 		region = "us-east-1"
 	}
+	interval := cfg.Interval
+	if interval <= 0 {
+		interval = 60
+	}
 	return &Server{
 		store:      cfg.Store,
 		discovery:  cfg.Discovery,
 		username:   cfg.Username,
 		password:   cfg.Password,
 		region:     region,
+		interval:   interval,
 		metricSets: cfg.MetricSets,
 		templates:  template.Must(template.New("admin").Parse(pageTemplate)),
 	}, nil
@@ -92,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/metric-definitions", s.handleAdminMetricDefinitions)
 	mux.HandleFunc("/admin/metric-definitions/", s.handleAdminMetricDefinitionAction)
 	mux.HandleFunc("/api/services", s.handleAPIServices)
+	mux.HandleFunc("/api/cost-estimate", s.handleAPICostEstimate)
 	mux.HandleFunc("/api/resources", s.handleAPIResources)
 	mux.HandleFunc("/api/resources/", s.handleAPIResourceAction)
 	mux.HandleFunc("/api/metric-candidates", s.handleAPIMetricCandidates)
@@ -126,7 +135,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	services, resources, candidates, definitions, err := s.dashboardData(r.Context(), r.URL.Query().Get("region"))
+	services, resources, candidates, definitions, cost, err := s.dashboardData(r.Context(), r.URL.Query().Get("region"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -137,6 +146,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		Resources   []store.AdminResource
 		Candidates  []store.AdminMetricCandidate
 		Definitions []store.AdminMetricDefinition
+		Cost        store.CollectionCostEstimate
 		MetricSets  []MetricSet
 	}{
 		Region:      s.requestRegion(r),
@@ -144,6 +154,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		Resources:   resources,
 		Candidates:  candidates,
 		Definitions: definitions,
+		Cost:        cost,
 		MetricSets:  s.metricSets,
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -152,28 +163,32 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) dashboardData(ctx context.Context, region string) ([]store.AdminService, []store.AdminResource, []store.AdminMetricCandidate, []store.AdminMetricDefinition, error) {
+func (s *Server) dashboardData(ctx context.Context, region string) ([]store.AdminService, []store.AdminResource, []store.AdminMetricCandidate, []store.AdminMetricDefinition, store.CollectionCostEstimate, error) {
 	region = strings.TrimSpace(region)
 	if region == "" {
 		region = s.region
 	}
 	services, err := s.store.ListAdminServices(ctx, region)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, store.CollectionCostEstimate{}, err
 	}
 	resources, err := s.store.ListAdminResources(ctx, region)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, store.CollectionCostEstimate{}, err
 	}
 	candidates, err := s.store.ListAdminMetricCandidates(ctx, region)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, store.CollectionCostEstimate{}, err
 	}
 	definitions, err := s.store.ListAdminMetricDefinitions(ctx, region)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, store.CollectionCostEstimate{}, err
 	}
-	return services, resources, candidates, definitions, nil
+	cost, err := s.store.CollectionCostEstimate(ctx, region, s.interval)
+	if err != nil {
+		return nil, nil, nil, nil, store.CollectionCostEstimate{}, err
+	}
+	return services, resources, candidates, definitions, cost, nil
 }
 
 func (s *Server) handleRunDiscovery(w http.ResponseWriter, r *http.Request) {
@@ -313,6 +328,19 @@ func (s *Server) handleAPIServices(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, services)
+}
+
+func (s *Server) handleAPICostEstimate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	cost, err := s.store.CollectionCostEstimate(r.Context(), s.requestRegion(r), s.interval)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, cost)
 }
 
 func (s *Server) handleAPIResources(w http.ResponseWriter, r *http.Request) {
@@ -672,6 +700,15 @@ const pageTemplate = `{{define "page"}}<!doctype html>
     </section>
     <section>
       <h2>서비스</h2>
+      <div class="toolbar">
+        <span>Enabled metrics {{.Cost.EnabledMetricCount}}</span>
+        <span>Regions {{.Cost.RegionCount}}</span>
+        <span>Interval {{.Cost.CollectorIntervalSeconds}}s</span>
+        <span>Monthly requests {{.Cost.MonthlyMetricRequests}}</span>
+        <span>Estimated GetMetricData ${{printf "%.4f" .Cost.EstimatedMonthlyCostUSD}}</span>
+        {{if .Cost.CostWarningMetricCount}}<span class="warning">Cost warning metrics {{.Cost.CostWarningMetricCount}}</span>{{end}}
+      </div>
+      <p class="muted">{{.Cost.PricingNote}}</p>
       <table>
         <thead><tr><th>서비스</th><th>리소스</th><th>Metric 후보</th><th>선택</th></tr></thead>
         <tbody>{{range .Services}}
@@ -744,13 +781,19 @@ const pageTemplate = `{{define "page"}}<!doctype html>
     <section>
       <h2>Metric Definition</h2>
       <table>
-        <thead><tr><th>상태</th><th>서비스</th><th>Metric</th><th>Resource</th><th>Dimensions</th><th>Public metadata</th><th>작업</th></tr></thead>
+        <thead><tr><th>상태</th><th>서비스</th><th>Metric</th><th>Resource</th><th>Diagnostics</th><th>Dimensions</th><th>Public metadata</th><th>작업</th></tr></thead>
         <tbody>{{range .Definitions}}
           <tr>
             <td class="status">{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
             <td>{{.ServiceName}}<br><span class="muted">{{.Namespace}}</span></td>
             <td>{{.MetricName}}<br><span class="muted">{{.Statistic}} / {{.PeriodSeconds}}s / {{.Unit}}</span></td>
             <td>{{.ResourceID}}<br><span class="muted">{{.Region}}</span></td>
+            <td>
+              <span class="status">{{.LastRunStatus}}</span><br>
+              <span class="muted">fetched {{.FetchedPointCount}} / inserted {{.InsertedPointCount}} / recent {{.RecentPointCount}}</span><br>
+              <span class="muted">latest {{.LatestPointAt}}</span><br>
+              {{if .SanitizedError}}<span class="warning">{{.SanitizedError}}</span>{{end}}
+            </td>
             <td><code>{{.DimensionsJSON}}</code></td>
             <td>
               <form method="post" action="/admin/metric-definitions/{{.ID}}/public?region={{$.Region}}" class="inline">
@@ -768,7 +811,7 @@ const pageTemplate = `{{define "page"}}<!doctype html>
               <form method="post" action="/admin/metric-definitions/{{.ID}}/delete?region={{$.Region}}" class="inline"><button class="secondary">삭제</button></form>
             </td>
           </tr>
-        {{else}}<tr><td colspan="7" class="muted">등록된 metric definition이 없습니다.</td></tr>{{end}}</tbody>
+        {{else}}<tr><td colspan="8" class="muted">등록된 metric definition이 없습니다.</td></tr>{{end}}</tbody>
       </table>
       <details>
         <summary>Advanced manual metric definition</summary>

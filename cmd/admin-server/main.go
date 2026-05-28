@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,13 @@ func main() {
 	addr := strings.TrimSpace(os.Getenv("ADMIN_HTTP_ADDR"))
 	if addr == "" {
 		addr = ":8080"
+	}
+	intervalSeconds := int64(60)
+	if value := strings.TrimSpace(os.Getenv("COLLECTOR_INTERVAL_SECONDS")); value != "" {
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err == nil && parsed >= 60 {
+			intervalSeconds = parsed
+		}
 	}
 
 	ctx := context.Background()
@@ -58,6 +66,7 @@ func main() {
 		Username:   username,
 		Password:   password,
 		Region:     region,
+		Interval:   intervalSeconds,
 		MetricSets: metricSets,
 	})
 	if err != nil {
