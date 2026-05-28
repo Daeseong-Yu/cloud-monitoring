@@ -14,7 +14,12 @@ jq . \
   grafana/dashboards/cloud-monitor-ec2-mvp.json \
   grafana/dashboards/cloud-monitor-lambda.json \
   grafana/dashboards/cloud-monitor-aws-resource.json \
-  grafana/dashboards/cloud-monitor-postgres-ops.json >/dev/null
+  grafana/dashboards/cloud-monitor-postgres-ops.json \
+  grafana/dashboards/cloud-monitor-overview.json \
+  grafana/dashboards/cloud-monitor-api-gateway.json \
+  grafana/dashboards/cloud-monitor-amplify.json \
+  grafana/dashboards/cloud-monitor-ses.json \
+  grafana/dashboards/cloud-monitor-s3.json >/dev/null
 
 GOCACHE="$go_cache" /usr/local/go/bin/go test ./...
 

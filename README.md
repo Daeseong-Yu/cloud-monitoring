@@ -117,6 +117,11 @@ Provisioning 대상:
 - `grafana/dashboards/cloud-monitor-lambda.json`
 - `grafana/dashboards/cloud-monitor-aws-resource.json`
 - `grafana/dashboards/cloud-monitor-postgres-ops.json`
+- `grafana/dashboards/cloud-monitor-overview.json`
+- `grafana/dashboards/cloud-monitor-api-gateway.json`
+- `grafana/dashboards/cloud-monitor-amplify.json`
+- `grafana/dashboards/cloud-monitor-ses.json`
+- `grafana/dashboards/cloud-monitor-s3.json`
 
 Grafana는 `cloud-monitor-postgres` datasource만 사용합니다.
 

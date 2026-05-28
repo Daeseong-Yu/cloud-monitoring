@@ -1,0 +1,439 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/AmplifyHosting'\n    AND md.metric_name = 'Requests'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Requests",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/AmplifyHosting'\n    AND md.metric_name = '4xxErrors'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "4xx Errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/AmplifyHosting'\n    AND md.metric_name = '5xxErrors'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "5xx Errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/AmplifyHosting'\n    AND md.metric_name = 'Latency'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Latency",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/AmplifyHosting'\n    AND md.metric_name = 'BytesDownloaded'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Bytes Downloaded",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/AmplifyHosting'\n    AND md.metric_name = 'BytesUploaded'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Bytes Uploaded",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/AmplifyHosting'\n    AND md.metric_name = 'TokensConsumed'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Tokens Consumed",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 8,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    md.metric_name,\n    md.statistic,\n    md.period_seconds,\n    count(mp.id) AS points,\n    max(mp.timestamp) AS latest_point\nFROM metric_definitions md\nLEFT JOIN metric_points mp\n    ON mp.metric_definition_id = md.id\n    AND $__timeFilter(mp.timestamp)\nWHERE\n    md.namespace = 'AWS/AmplifyHosting'\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\nGROUP BY md.metric_name, md.statistic, md.period_seconds\nORDER BY md.metric_name;",
+          "refId": "A"
+        }
+      ],
+      "title": "Metric Coverage",
+      "type": "table"
+    }
+  ],
+  "refresh": "10m",
+  "schemaVersion": 39,
+  "tags": [
+    "cloud-monitor",
+    "amplify"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "cloud-monitor-postgres"
+        },
+        "definition": "SELECT DISTINCT region AS __text, region AS __value FROM metric_definitions WHERE enabled = TRUE AND namespace = 'AWS/AmplifyHosting' ORDER BY region;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Region",
+        "multi": false,
+        "name": "region",
+        "options": [],
+        "query": "SELECT DISTINCT region AS __text, region AS __value FROM metric_definitions WHERE enabled = TRUE AND namespace = 'AWS/AmplifyHosting' ORDER BY region;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "cloud-monitor-postgres"
+        },
+        "definition": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND namespace = 'AWS/AmplifyHosting' AND region = ${region:sqlstring} ORDER BY resource_id;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "App",
+        "multi": false,
+        "name": "resource_id",
+        "options": [],
+        "query": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND namespace = 'AWS/AmplifyHosting' AND region = ${region:sqlstring} ORDER BY resource_id;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Cloud Monitor Amplify",
+  "uid": "cloud-monitor-amplify",
+  "version": 1,
+  "weekStart": ""
+}

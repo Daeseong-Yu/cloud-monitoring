@@ -1,0 +1,562 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'CPUUtilization'\n    AND md.resource_id = ${ec2_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'mem_used_percent'\n    AND md.resource_id = ${ec2_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Memory",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'disk_used_percent'\n    AND md.resource_id = ${ec2_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Disk",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'NetworkIn'\n    AND md.resource_id = ${ec2_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Network In",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'NetworkOut'\n    AND md.resource_id = ${ec2_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Network Out",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.metric_name = 'StatusCheckFailed'\n    AND md.resource_id = ${ec2_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "EC2 Status Check Failed",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/Lambda'\n    AND md.metric_name = 'Invocations'\n    AND md.resource_id = ${lambda_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Lambda Invocations",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/Lambda'\n    AND md.metric_name = 'Errors'\n    AND md.resource_id = ${lambda_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Lambda Errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/Lambda'\n    AND md.metric_name = 'Duration'\n    AND md.resource_id = ${lambda_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Lambda Duration",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "cloud-monitor-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "cloud-monitor-postgres"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.namespace = 'AWS/Lambda'\n    AND md.metric_name = 'Throttles'\n    AND md.resource_id = ${lambda_resource_id:sqlstring}\n    AND md.region = ${region:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "refId": "A"
+        }
+      ],
+      "title": "Lambda Throttles",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10m",
+  "schemaVersion": 39,
+  "tags": [
+    "cloud-monitor",
+    "overview"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "cloud-monitor-postgres"
+        },
+        "definition": "SELECT DISTINCT region AS __text, region AS __value FROM metric_definitions WHERE enabled = TRUE ORDER BY region;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Region",
+        "multi": false,
+        "name": "region",
+        "options": [],
+        "query": "SELECT DISTINCT region AS __text, region AS __value FROM metric_definitions WHERE enabled = TRUE ORDER BY region;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "cloud-monitor-postgres"
+        },
+        "definition": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND namespace IN ('AWS/EC2', 'CWAgent') AND region = ${region:sqlstring} ORDER BY resource_id;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "EC2 Resource",
+        "multi": false,
+        "name": "ec2_resource_id",
+        "options": [],
+        "query": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND namespace IN ('AWS/EC2', 'CWAgent') AND region = ${region:sqlstring} ORDER BY resource_id;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {},
+        "datasource": {
+          "type": "postgres",
+          "uid": "cloud-monitor-postgres"
+        },
+        "definition": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND namespace = 'AWS/Lambda' AND region = ${region:sqlstring} ORDER BY resource_id;",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Lambda Resource",
+        "multi": false,
+        "name": "lambda_resource_id",
+        "options": [],
+        "query": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND namespace = 'AWS/Lambda' AND region = ${region:sqlstring} ORDER BY resource_id;",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Cloud Monitor Overview",
+  "uid": "cloud-monitor-overview",
+  "version": 1,
+  "weekStart": ""
+}
