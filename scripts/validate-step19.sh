@@ -17,6 +17,11 @@ grep -q 'production-deploy' .github/workflows/deploy.yml
 grep -q 'git fetch --prune' .github/workflows/deploy.yml
 grep -q 'scripts/deploy-production.sh' .github/workflows/deploy.yml
 
+if grep -E 'actions/setup-go|go test|validate-step|validate-common|validate-public-dashboard|docs/operations|docker compose' .github/workflows/deploy.yml >/dev/null; then
+  echo "deploy workflow must not run non-deployment validation" >&2
+  exit 1
+fi
+
 grep -q 'git checkout --force' scripts/deploy-production.sh
 grep -q 'validate-production-env.sh' scripts/deploy-production.sh
 grep -q 'docker compose up -d --build postgres grafana admin-ui' scripts/deploy-production.sh

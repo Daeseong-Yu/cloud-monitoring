@@ -27,10 +27,6 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
       - name: Resolve deploy revision
         id: revision
         shell: bash
@@ -49,14 +45,6 @@ jobs:
           echo "sha=$deploy_sha" >>"$GITHUB_OUTPUT"
           echo "Deploy ref: $deploy_ref"
           echo "Deploy sha: $deploy_sha"
-
-      - name: Go test
-        run: go test ./...
-
-      - name: Validate tracked release surface
-        run: |
-          sh scripts/validate-step11.sh
-          sh scripts/validate-step12.sh
 
       - name: Prepare SSH
         shell: bash
