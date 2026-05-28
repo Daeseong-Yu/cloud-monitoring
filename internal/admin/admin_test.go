@@ -23,6 +23,23 @@ func (s *fakeStore) SetResourceEnabled(_ context.Context, _ int64, enabled bool)
 	return nil
 }
 
+func (s *fakeStore) ListAdminMetricCandidates(context.Context, string) ([]store.AdminMetricCandidate, error) {
+	return []store.AdminMetricCandidate{{
+		ID:                 1,
+		ServiceName:        "lambda",
+		ResourceIdentifier: "orders-api",
+		DisplayName:        "Orders API",
+		Namespace:          "AWS/Lambda",
+		MetricName:         "Errors",
+		Statistic:          "Sum",
+		PeriodSeconds:      300,
+		Unit:               "Count",
+		Region:             "us-east-1",
+		AvailabilityStatus: "available",
+		ProviderSource:     "lambda-provider",
+	}}, nil
+}
+
 func (s *fakeStore) ListAdminMetricDefinitions(context.Context, string) ([]store.AdminMetricDefinition, error) {
 	return nil, nil
 }
@@ -76,6 +93,25 @@ func TestAPIResourceEnableUsesBasicAuth(t *testing.T) {
 	}
 	if !st.resourceEnabled {
 		t.Fatal("expected resource to be enabled")
+	}
+}
+
+func TestAPIMetricCandidatesIncludesAvailability(t *testing.T) {
+	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/api/metric-candidates", nil)
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "availabilityStatus") {
+		t.Fatalf("response does not include availability status: %s", response.Body.String())
 	}
 }
 

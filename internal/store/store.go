@@ -44,10 +44,33 @@ type AdminResource struct {
 	Region            string `json:"region"`
 	DisplayName       string `json:"displayName"`
 	TagsJSON          string `json:"tags"`
+	ProviderSource    string `json:"providerSource"`
 	Enabled           bool   `json:"enabled"`
 	DiscoveredMetrics int64  `json:"discoveredMetrics"`
+	AvailableMetrics  int64  `json:"availableMetrics"`
 	SelectedMetrics   int64  `json:"selectedMetrics"`
 	MetricDefinitions int64  `json:"metricDefinitions"`
+}
+
+type AdminMetricCandidate struct {
+	ID                 int64  `json:"id"`
+	ResourceID         int64  `json:"resourceRowId"`
+	ServiceName        string `json:"serviceName"`
+	ResourceIdentifier string `json:"resourceId"`
+	DisplayName        string `json:"displayName"`
+	Namespace          string `json:"namespace"`
+	MetricName         string `json:"metricName"`
+	DimensionsJSON     string `json:"dimensions"`
+	Statistic          string `json:"statistic"`
+	PeriodSeconds      int32  `json:"periodSeconds"`
+	Unit               string `json:"unit"`
+	Region             string `json:"region"`
+	Selected           bool   `json:"selected"`
+	AvailabilityStatus string `json:"availabilityStatus"`
+	AvailabilityReason string `json:"availabilityReason"`
+	ProviderSource     string `json:"providerSource"`
+	Prerequisite       string `json:"prerequisite"`
+	CostWarning        string `json:"costWarning"`
 }
 
 type AdminMetricDefinition struct {
@@ -194,8 +217,10 @@ SELECT
     r.region,
     r.display_name,
     r.tags::text,
+    COALESCE(r.provider_source, ''),
     r.enabled,
     COUNT(DISTINCT dm.id) AS discovered_metrics,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'available') AS available_metrics,
     COUNT(DISTINCT dm.id) FILTER (WHERE dm.selected = TRUE) AS selected_metrics,
     COUNT(DISTINCT md.id) AS metric_definitions
 FROM resources r
@@ -218,6 +243,45 @@ ORDER BY r.region, r.service_name, r.display_name, r.resource_id`
 		return nil, fmt.Errorf("scan admin resources: %w", err)
 	}
 	return resources, nil
+}
+
+func (s *Store) ListAdminMetricCandidates(ctx context.Context, region string) ([]AdminMetricCandidate, error) {
+	const query = `
+SELECT
+    dm.id,
+    dm.resource_id,
+    r.service_name,
+    r.resource_id,
+    r.display_name,
+    dm.namespace,
+    dm.metric_name,
+    dm.dimensions::text,
+    dm.statistic,
+    dm.period_seconds,
+    COALESCE(dm.unit, ''),
+    dm.region,
+    dm.selected,
+    dm.availability_status,
+    dm.availability_reason,
+    dm.provider_source,
+    dm.prerequisite,
+    dm.cost_warning
+FROM discovered_metrics dm
+JOIN resources r ON r.id = dm.resource_id
+WHERE ($1 = '' OR dm.region = $1)
+ORDER BY dm.region, r.service_name, r.display_name, dm.metric_name, dm.statistic, dm.period_seconds`
+
+	rows, err := s.pool.Query(ctx, query, region)
+	if err != nil {
+		return nil, fmt.Errorf("query admin metric candidates: %w", err)
+	}
+	defer rows.Close()
+
+	candidates, err := pgx.CollectRows(rows, pgx.RowToStructByPos[AdminMetricCandidate])
+	if err != nil {
+		return nil, fmt.Errorf("scan admin metric candidates: %w", err)
+	}
+	return candidates, nil
 }
 
 func (s *Store) SetResourceEnabled(ctx context.Context, id int64, enabled bool) error {
@@ -384,7 +448,7 @@ func (s *Store) DeleteMetricDefinition(ctx context.Context, id int64) error {
 func (s *Store) ApplyRecommendedMetricSet(ctx context.Context, resourceRowID int64, metrics []RecommendedMetric) (int64, error) {
 	var resource AdminResource
 	err := s.pool.QueryRow(ctx, `
-SELECT id, service_name, namespace, resource_id, region, display_name, tags::text, enabled, 0::bigint, 0::bigint, 0::bigint
+SELECT id, service_name, namespace, resource_id, region, display_name, tags::text, COALESCE(provider_source, ''), enabled, 0::bigint, 0::bigint, 0::bigint, 0::bigint
 FROM resources
 WHERE id = $1`, resourceRowID).Scan(
 		&resource.ID,
@@ -394,8 +458,10 @@ WHERE id = $1`, resourceRowID).Scan(
 		&resource.Region,
 		&resource.DisplayName,
 		&resource.TagsJSON,
+		&resource.ProviderSource,
 		&resource.Enabled,
 		&resource.DiscoveredMetrics,
+		&resource.AvailableMetrics,
 		&resource.SelectedMetrics,
 		&resource.MetricDefinitions,
 	)
@@ -495,12 +561,13 @@ func (s *Store) UpsertDiscoveredResources(ctx context.Context, resources []disco
 
 		var resourceRowID int64
 		err = tx.QueryRow(ctx, `
-INSERT INTO resources (service_name, namespace, resource_id, region, display_name, tags, enabled)
-VALUES ($1, $2, $3, $4, $5, $6::jsonb, FALSE)
+INSERT INTO resources (service_name, namespace, resource_id, region, display_name, tags, provider_source, enabled)
+VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, FALSE)
 ON CONFLICT ON CONSTRAINT resources_unique_resource DO UPDATE SET
     namespace = EXCLUDED.namespace,
     display_name = EXCLUDED.display_name,
     tags = EXCLUDED.tags,
+    provider_source = EXCLUDED.provider_source,
     updated_at = now()
 RETURNING id`,
 			resource.ServiceName,
@@ -509,6 +576,7 @@ RETURNING id`,
 			resource.Region,
 			resource.DisplayName,
 			tagsJSON,
+			resource.ProviderSource,
 		).Scan(&resourceRowID)
 		if err != nil {
 			return 0, 0, fmt.Errorf("upsert discovered resource: %w", err)
@@ -521,11 +589,31 @@ RETURNING id`,
 				return 0, 0, err
 			}
 			tag, err := tx.Exec(ctx, `
-INSERT INTO discovered_metrics (resource_id, namespace, metric_name, dimensions, statistic, period_seconds, unit, region, selected)
-VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, FALSE)
+INSERT INTO discovered_metrics (
+    resource_id,
+    namespace,
+    metric_name,
+    dimensions,
+    statistic,
+    period_seconds,
+    unit,
+    region,
+    selected,
+    availability_status,
+    availability_reason,
+    provider_source,
+    prerequisite,
+    cost_warning
+)
+VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, FALSE, $9, $10, $11, $12, $13)
 ON CONFLICT ON CONSTRAINT discovered_metrics_unique_metric DO UPDATE SET
     unit = EXCLUDED.unit,
     region = EXCLUDED.region,
+    availability_status = EXCLUDED.availability_status,
+    availability_reason = EXCLUDED.availability_reason,
+    provider_source = EXCLUDED.provider_source,
+    prerequisite = EXCLUDED.prerequisite,
+    cost_warning = EXCLUDED.cost_warning,
     updated_at = now()`,
 				resourceRowID,
 				metric.Namespace,
@@ -535,6 +623,11 @@ ON CONFLICT ON CONSTRAINT discovered_metrics_unique_metric DO UPDATE SET
 				metric.PeriodSeconds,
 				metric.Unit,
 				resource.Region,
+				defaultString(metric.AvailabilityStatus, discovery.AvailabilityAvailable),
+				metric.AvailabilityReason,
+				defaultString(metric.ProviderSource, resource.ProviderSource),
+				metric.Prerequisite,
+				metric.CostWarning,
 			)
 			if err != nil {
 				return 0, 0, fmt.Errorf("upsert discovered metric: %w", err)
@@ -547,4 +640,11 @@ ON CONFLICT ON CONSTRAINT discovered_metrics_unique_metric DO UPDATE SET
 		return 0, 0, fmt.Errorf("commit discovery upsert: %w", err)
 	}
 	return resourceCount, metricCount, nil
+}
+
+func defaultString(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }

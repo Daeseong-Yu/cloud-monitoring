@@ -14,6 +14,7 @@ import (
 
 type Store interface {
 	ListAdminResources(context.Context, string) ([]store.AdminResource, error)
+	ListAdminMetricCandidates(context.Context, string) ([]store.AdminMetricCandidate, error)
 	SetResourceEnabled(context.Context, int64, bool) error
 	ListAdminMetricDefinitions(context.Context, string) ([]store.AdminMetricDefinition, error)
 	UpsertMetricDefinition(context.Context, store.MetricDefinitionInput) (int64, error)
@@ -87,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/admin/metric-definitions/", s.handleAdminMetricDefinitionAction)
 	mux.HandleFunc("/api/resources", s.handleAPIResources)
 	mux.HandleFunc("/api/resources/", s.handleAPIResourceAction)
+	mux.HandleFunc("/api/metric-candidates", s.handleAPIMetricCandidates)
 	mux.HandleFunc("/api/metric-definitions", s.handleAPIMetricDefinitions)
 	mux.HandleFunc("/api/metric-definitions/", s.handleAPIMetricDefinitionAction)
 	return s.basicAuth(mux)
@@ -309,6 +311,19 @@ func (s *Server) handleAPIMetricDefinitions(w http.ResponseWriter, r *http.Reque
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func (s *Server) handleAPIMetricCandidates(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	candidates, err := s.store.ListAdminMetricCandidates(r.Context(), s.requestRegion(r))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, candidates)
 }
 
 func (s *Server) handleAPIMetricDefinitionAction(w http.ResponseWriter, r *http.Request) {

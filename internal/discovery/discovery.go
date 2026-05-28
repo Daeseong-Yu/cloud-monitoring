@@ -24,22 +24,28 @@ type TagInfo struct {
 }
 
 type Resource struct {
-	ServiceName string
-	Namespace   string
-	ResourceID  string
-	Region      string
-	DisplayName string
-	Tags        map[string]string
-	Metrics     []DiscoveredMetric
+	ServiceName    string
+	Namespace      string
+	ResourceID     string
+	Region         string
+	DisplayName    string
+	Tags           map[string]string
+	ProviderSource string
+	Metrics        []DiscoveredMetric
 }
 
 type DiscoveredMetric struct {
-	Namespace     string
-	MetricName    string
-	Dimensions    []Dimension
-	Statistic     string
-	PeriodSeconds int
-	Unit          string
+	Namespace          string
+	MetricName         string
+	Dimensions         []Dimension
+	Statistic          string
+	PeriodSeconds      int
+	Unit               string
+	AvailabilityStatus string
+	AvailabilityReason string
+	ProviderSource     string
+	Prerequisite       string
+	CostWarning        string
 }
 
 func ResourcesFromMetrics(region string, metrics []Metric, tags map[string]TagInfo) []Resource {
@@ -128,6 +134,7 @@ func ResourceIDFromDimensions(dimensions []Dimension) string {
 		"BucketName",
 		"LoadBalancer",
 		"ApiName",
+		"App",
 		"QueueName",
 	}
 	for _, name := range preferred {

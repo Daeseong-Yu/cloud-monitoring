@@ -64,8 +64,29 @@ ON resources (region, service_name);
 CREATE INDEX IF NOT EXISTS idx_resources_enabled
 ON resources (enabled);
 
+ALTER TABLE resources
+    ADD COLUMN IF NOT EXISTS provider_source TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE discovered_metrics
+    ADD COLUMN IF NOT EXISTS availability_status TEXT NOT NULL DEFAULT 'available',
+    ADD COLUMN IF NOT EXISTS availability_reason TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS provider_source TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS prerequisite TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS cost_warning TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE discovered_metrics
+    DROP CONSTRAINT IF EXISTS discovered_metrics_availability_status_valid;
+
+ALTER TABLE discovered_metrics
+    ADD CONSTRAINT discovered_metrics_availability_status_valid CHECK (
+        availability_status IN ('available', 'not_seen', 'requires_setup', 'unsupported')
+    );
+
 CREATE INDEX IF NOT EXISTS idx_discovered_metrics_selected
 ON discovered_metrics (selected);
+
+CREATE INDEX IF NOT EXISTS idx_discovered_metrics_availability
+ON discovered_metrics (availability_status);
 
 CREATE INDEX IF NOT EXISTS idx_metric_definitions_dimensions
 ON metric_definitions USING GIN (dimensions);

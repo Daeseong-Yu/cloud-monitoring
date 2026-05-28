@@ -16,12 +16,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
 
 	"cloud-monitor/internal/discovery"
+	"cloud-monitor/internal/productcatalog"
 	"cloud-monitor/internal/sanitize"
 	"cloud-monitor/internal/store"
 )
 
 func main() {
-	namespaces := flag.String("namespaces", "AWS/EC2,AWS/Lambda,CWAgent", "comma-separated CloudWatch namespaces to discover")
+	defaultRegistry := discovery.DefaultRegistry()
+	namespaces := flag.String("namespaces", strings.Join(defaultRegistry.Namespaces(), ","), "comma-separated CloudWatch namespaces to discover")
+	catalogPath := flag.String("catalog", "configs/product-metric-catalog.json", "product metric catalog JSON path")
 	dryRun := flag.Bool("dry-run", false, "print discovery candidates without writing to PostgreSQL")
 	flag.Parse()
 
@@ -38,19 +41,25 @@ func main() {
 		os.Exit(1)
 	}
 
+	catalog, err := productcatalog.LoadFile(*catalogPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "resource discovery product catalog error: %v\n", err)
+		os.Exit(1)
+	}
+
 	cloudWatchMetrics, err := listMetrics(ctx, cloudwatch.NewFromConfig(awsCfg), splitList(*namespaces))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "resource discovery CloudWatch error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "resource discovery CloudWatch error: %s\n", sanitize.Message(err.Error(), ""))
 		os.Exit(1)
 	}
 
 	tags, err := listResourceTags(ctx, resourcegroupstaggingapi.NewFromConfig(awsCfg))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "resource discovery tag enrichment error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "resource discovery tag enrichment error: %s\n", sanitize.Message(err.Error(), ""))
 		os.Exit(1)
 	}
 
-	resources := discovery.ResourcesFromMetrics(region, cloudWatchMetrics, tags)
+	resources := defaultRegistry.Discover(region, cloudWatchMetrics, tags, catalog)
 	if *dryRun {
 		printResources(resources)
 		return
