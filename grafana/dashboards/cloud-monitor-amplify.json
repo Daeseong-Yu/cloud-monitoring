@@ -35,7 +35,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "min": 0
         },
         "overrides": []
       },
@@ -80,7 +81,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "min": 0
         },
         "overrides": []
       },
@@ -125,7 +127,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "min": 0
         },
         "overrides": []
       },
@@ -170,7 +173,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s"
+          "unit": "s",
+          "min": 0
         },
         "overrides": []
       },
@@ -215,7 +219,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "decbytes"
+          "unit": "decbytes",
+          "min": 0
         },
         "overrides": []
       },
@@ -260,7 +265,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "decbytes"
+          "unit": "decbytes",
+          "min": 0
         },
         "overrides": []
       },
@@ -305,7 +311,8 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "short",
+          "min": 0
         },
         "overrides": []
       },
