@@ -158,6 +158,35 @@ func TestPublicMetricsDoNotRequireBasicAuth(t *testing.T) {
 	}
 }
 
+func TestPublicOverviewUsesPublicAPIOnly(t *testing.T) {
+	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/public/overview", nil)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	if !strings.Contains(response.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("content type = %q, want text/html", response.Header().Get("Content-Type"))
+	}
+	for _, expected := range []string{"Cloud Monitor Portfolio", "/api/public/metrics", "/series"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("public overview does not include %q: %s", expected, body)
+		}
+	}
+	for _, forbidden := range []string{"/admin", "Discovery 실행", "metric-candidates", "metric-definitions", "resourceId", "accountId", "sanitizedError"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("public overview exposes admin or internal field %q: %s", forbidden, body)
+		}
+	}
+}
+
 func TestPublicMetricSeriesIsReadOnly(t *testing.T) {
 	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
 	if err != nil {

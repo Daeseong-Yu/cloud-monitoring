@@ -132,13 +132,21 @@ Grafana는 `cloud-monitor-postgres` datasource만 사용합니다.
 
 ## Public Portfolio API
 
-Public Portfolio API는 read-only이며 Admin API와 별도 경로에서 제공합니다. 응답은 `public_enabled=true`로 명시한 resource와 metric definition만 포함하고, public alias와 public label 중심의 데이터만 반환합니다.
+Public Portfolio 화면과 API는 read-only이며 Admin API와 별도 경로에서 제공합니다. 응답은 `public_enabled=true`로 명시한 resource와 metric definition만 포함하고, public alias와 public label 중심의 데이터만 반환합니다.
 
 - `GET /public/overview`
 - `GET /api/public/metrics`
 - `GET /api/public/metrics/{id}/series`
 
 Public API 응답에는 raw resource id, AWS account id, full ARN, raw tags, credential, raw collector error를 포함하지 않습니다.
+
+공개 전 확인:
+
+- 공개 URL, domain, 서버 IP, credential은 tracked file에 기록하지 않습니다.
+- Admin UI는 내부망, VPN, 또는 IP allowlist 뒤에 두고 `/public/overview`만 외부 노출 대상으로 검토합니다.
+- 공개할 resource와 metric definition은 Admin UI public metadata에서 명시적으로 opt-in합니다.
+- 공개 화면은 public API만 호출하며 Grafana public dashboard를 portfolio surface로 사용하지 않습니다.
+- 배포 전 `sh scripts/validate-productization.sh`와 `RUN_GITLEAKS=1 sh scripts/scan-secrets.sh`를 실행합니다.
 
 ## AWS 권한
 

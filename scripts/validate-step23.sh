@@ -25,7 +25,7 @@ grep -q 'UpdateMetricDefinitionPublicMetadata' internal/store/store.go
 grep -q 'public_label is required when public_enabled is true' internal/store/store.go
 
 if grep -E 'HandleFunc\("/admin|HandleFunc\("/api' internal/admin/admin.go | grep -v 'basicAuth' >/dev/null; then
-  grep -q 'return s.basicAuth(mux)' internal/admin/admin.go
+  grep -Eq 'return s.basicAuth\(mux\)|root.Handle\("/", s.basicAuth\(adminMux\)\)' internal/admin/admin.go
 fi
 
 api_handlers="$(sed -n '/func (s \*Server) handleAPI/,/func (s \*Server) requestRegion/p' internal/admin/admin.go)"
