@@ -18,6 +18,9 @@ type fakeStore struct {
 	resourcePublic  store.PublicMetadataInput
 	metricPublic    store.PublicMetadataInput
 	publicMetrics   []store.PublicMetric
+	bulkSelected    int64
+	bulkEnabled     bool
+	bulkUpdated     int64
 }
 
 func (s *fakeStore) ListAdminServices(context.Context, string) ([]store.AdminService, error) {
@@ -105,6 +108,12 @@ func (s *fakeStore) SetMetricDefinitionEnabled(context.Context, int64, bool) err
 	return nil
 }
 
+func (s *fakeStore) SetMetricDefinitionsEnabled(_ context.Context, _ string, _ string, enabled bool) (int64, error) {
+	s.bulkEnabled = enabled
+	s.bulkUpdated = 4
+	return s.bulkUpdated, nil
+}
+
 func (s *fakeStore) UpdateMetricDefinitionPublicMetadata(_ context.Context, _ int64, input store.PublicMetadataInput) error {
 	s.metricPublic = input
 	return nil
@@ -116,6 +125,11 @@ func (s *fakeStore) DeleteMetricDefinition(context.Context, int64) error {
 
 func (s *fakeStore) ApplyRecommendedMetricSet(context.Context, int64, []store.RecommendedMetric) (int64, error) {
 	return 1, nil
+}
+
+func (s *fakeStore) SelectAvailableMetricCandidates(context.Context, string, string) (int64, error) {
+	s.bulkSelected = 3
+	return s.bulkSelected, nil
 }
 
 func (s *fakeStore) SelectMetricCandidate(context.Context, int64) (int64, error) {
@@ -274,6 +288,28 @@ func TestAPIResourceEnableUsesBasicAuth(t *testing.T) {
 	}
 }
 
+func TestAdminBulkActionsRequireConfirmation(t *testing.T) {
+	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, expected := range []string{"Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm("} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("admin page does not include bulk action confirmation marker %q", expected)
+		}
+	}
+}
+
 func TestAPIMetricCandidatesIncludesAvailability(t *testing.T) {
 	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
 	if err != nil {
@@ -348,6 +384,53 @@ func TestAPIMetricCandidateSelect(t *testing.T) {
 	}
 	if !st.selectedMetric {
 		t.Fatal("expected metric candidate selection")
+	}
+}
+
+func TestAPIMetricCandidatesSelectAvailable(t *testing.T) {
+	st := &fakeStore{}
+	server, err := NewServer(Config{Store: st, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/metric-candidates/select-available?serviceName=lambda", nil)
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if st.bulkSelected != 3 {
+		t.Fatalf("bulkSelected = %d, want 3", st.bulkSelected)
+	}
+	if !strings.Contains(response.Body.String(), `"selected":3`) {
+		t.Fatalf("response does not include selected count: %s", response.Body.String())
+	}
+}
+
+func TestAPIMetricDefinitionsBulkEnabled(t *testing.T) {
+	st := &fakeStore{}
+	server, err := NewServer(Config{Store: st, Username: "admin", Password: "secret", Region: "us-east-1"})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPatch, "/api/metric-definitions/bulk-enabled", strings.NewReader(`{"enabled":true,"serviceName":"lambda"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if !st.bulkEnabled || st.bulkUpdated != 4 {
+		t.Fatalf("bulk enabled=%v updated=%d, want true/4", st.bulkEnabled, st.bulkUpdated)
+	}
+	if !strings.Contains(response.Body.String(), `"updated":4`) {
+		t.Fatalf("response does not include updated count: %s", response.Body.String())
 	}
 }
 

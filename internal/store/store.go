@@ -846,6 +846,22 @@ WHERE id = $1`, id, enabled)
 	return nil
 }
 
+func (s *Store) SetMetricDefinitionsEnabled(ctx context.Context, region string, serviceName string, enabled bool) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+UPDATE metric_definitions
+SET enabled = $3, updated_at = now()
+WHERE ($1 = '' OR region = $1)
+  AND ($2 = '' OR service_name = $2)`,
+		strings.TrimSpace(region),
+		strings.TrimSpace(serviceName),
+		enabled,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("update metric definitions enabled: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (s *Store) UpdateMetricDefinitionPublicMetadata(ctx context.Context, id int64, input PublicMetadataInput) error {
 	if input.PublicEnabled && strings.TrimSpace(input.PublicLabel) == "" {
 		return fmt.Errorf("public_label is required when public_enabled is true")
@@ -884,6 +900,76 @@ func (s *Store) DeleteMetricDefinition(ctx context.Context, id int64) error {
 		return fmt.Errorf("metric definition not found")
 	}
 	return nil
+}
+
+func (s *Store) SelectAvailableMetricCandidates(ctx context.Context, region string, serviceName string) (int64, error) {
+	region = strings.TrimSpace(region)
+	serviceName = strings.TrimSpace(serviceName)
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin available metric candidate selection: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+WITH candidates AS (
+    SELECT
+        r.service_name,
+        dm.namespace,
+        dm.metric_name,
+        r.resource_id AS resource_identifier,
+        dm.region,
+        dm.dimensions,
+        dm.statistic,
+        dm.period_seconds,
+        COALESCE(dm.unit, '') AS unit
+    FROM discovered_metrics dm
+    JOIN resources r ON r.id = dm.resource_id
+    WHERE dm.availability_status = $1
+      AND dm.selected = FALSE
+      AND ($2 = '' OR dm.region = $2)
+      AND ($3 = '' OR r.service_name = $3)
+)
+INSERT INTO metric_definitions (service_name, namespace, metric_name, resource_id, region, dimensions, statistic, period_seconds, unit, enabled)
+SELECT service_name, namespace, metric_name, resource_identifier, region, dimensions, statistic, period_seconds, unit, TRUE
+FROM candidates
+ON CONFLICT ON CONSTRAINT metric_definitions_unique_metric DO UPDATE SET
+    service_name = EXCLUDED.service_name,
+    unit = EXCLUDED.unit,
+    enabled = TRUE,
+    updated_at = now()
+RETURNING 1`, discovery.AvailabilityAvailable, region, serviceName)
+	if err != nil {
+		return 0, fmt.Errorf("select available metric candidates: %w", err)
+	}
+	var selected int64
+	for rows.Next() {
+		selected++
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("iterate selected metric candidates: %w", err)
+	}
+	rows.Close()
+
+	if selected > 0 {
+		if _, err := tx.Exec(ctx, `
+UPDATE discovered_metrics dm
+SET selected = TRUE, updated_at = now()
+FROM resources r
+WHERE r.id = dm.resource_id
+  AND dm.availability_status = $1
+  AND ($2 = '' OR dm.region = $2)
+  AND ($3 = '' OR r.service_name = $3)`, discovery.AvailabilityAvailable, region, serviceName); err != nil {
+			return 0, fmt.Errorf("mark available metric candidates selected: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit available metric candidate selection: %w", err)
+	}
+	return selected, nil
 }
 
 func (s *Store) SelectMetricCandidate(ctx context.Context, candidateID int64) (int64, error) {

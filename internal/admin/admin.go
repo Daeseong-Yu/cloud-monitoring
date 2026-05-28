@@ -24,9 +24,11 @@ type Store interface {
 	ListAdminMetricDefinitions(context.Context, string) ([]store.AdminMetricDefinition, error)
 	UpsertMetricDefinition(context.Context, store.MetricDefinitionInput) (int64, error)
 	SetMetricDefinitionEnabled(context.Context, int64, bool) error
+	SetMetricDefinitionsEnabled(context.Context, string, string, bool) (int64, error)
 	UpdateMetricDefinitionPublicMetadata(context.Context, int64, store.PublicMetadataInput) error
 	DeleteMetricDefinition(context.Context, int64) error
 	ApplyRecommendedMetricSet(context.Context, int64, []store.RecommendedMetric) (int64, error)
+	SelectAvailableMetricCandidates(context.Context, string, string) (int64, error)
 	SelectMetricCandidate(context.Context, int64) (int64, error)
 }
 
@@ -103,16 +105,20 @@ func (s *Server) Handler() http.Handler {
 	adminMux.HandleFunc("/admin", s.handleAdmin)
 	adminMux.HandleFunc("/admin/discovery/run", s.handleRunDiscovery)
 	adminMux.HandleFunc("/admin/resources/", s.handleAdminResourceAction)
+	adminMux.HandleFunc("/admin/metric-candidates/select-available", s.handleAdminMetricCandidatesSelectAvailable)
 	adminMux.HandleFunc("/admin/metric-candidates/", s.handleAdminMetricCandidateAction)
 	adminMux.HandleFunc("/admin/metric-definitions", s.handleAdminMetricDefinitions)
+	adminMux.HandleFunc("/admin/metric-definitions/bulk-enabled", s.handleAdminMetricDefinitionsBulkEnabled)
 	adminMux.HandleFunc("/admin/metric-definitions/", s.handleAdminMetricDefinitionAction)
 	adminMux.HandleFunc("/api/services", s.handleAPIServices)
 	adminMux.HandleFunc("/api/cost-estimate", s.handleAPICostEstimate)
 	adminMux.HandleFunc("/api/resources", s.handleAPIResources)
 	adminMux.HandleFunc("/api/resources/", s.handleAPIResourceAction)
 	adminMux.HandleFunc("/api/metric-candidates", s.handleAPIMetricCandidates)
+	adminMux.HandleFunc("/api/metric-candidates/select-available", s.handleAPIMetricCandidatesSelectAvailable)
 	adminMux.HandleFunc("/api/metric-candidates/", s.handleAPIMetricCandidateAction)
 	adminMux.HandleFunc("/api/metric-definitions", s.handleAPIMetricDefinitions)
+	adminMux.HandleFunc("/api/metric-definitions/bulk-enabled", s.handleAPIMetricDefinitionsBulkEnabled)
 	adminMux.HandleFunc("/api/metric-definitions/", s.handleAPIMetricDefinitionAction)
 
 	root := http.NewServeMux()
@@ -341,6 +347,18 @@ func (s *Server) handleAdminMetricCandidateAction(w http.ResponseWriter, r *http
 	http.Redirect(w, r, "/admin?region="+s.requestRegion(r), http.StatusSeeOther)
 }
 
+func (s *Server) handleAdminMetricCandidatesSelectAvailable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	if _, err := s.store.SelectAvailableMetricCandidates(r.Context(), s.requestRegion(r), strings.TrimSpace(r.FormValue("service_name"))); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/admin?region="+s.requestRegion(r), http.StatusSeeOther)
+}
+
 func (s *Server) handleAdminMetricDefinitions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -352,6 +370,23 @@ func (s *Server) handleAdminMetricDefinitions(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if _, err := s.store.UpsertMetricDefinition(r.Context(), input); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/admin?region="+s.requestRegion(r), http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminMetricDefinitionsBulkEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	enabled, err := enabledFromRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if _, err := s.store.SetMetricDefinitionsEnabled(r.Context(), s.requestRegion(r), strings.TrimSpace(r.FormValue("service_name")), enabled); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -496,6 +531,40 @@ func (s *Server) handleAPIMetricDefinitions(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+func (s *Server) handleAPIMetricDefinitionsBulkEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodPatch {
+		methodNotAllowed(w)
+		return
+	}
+	serviceName := strings.TrimSpace(r.URL.Query().Get("serviceName"))
+	var enabled bool
+	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		var payload struct {
+			Enabled     bool   `json:"enabled"`
+			ServiceName string `json:"serviceName"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		enabled = payload.Enabled
+		serviceName = strings.TrimSpace(payload.ServiceName)
+	} else {
+		var err error
+		enabled, err = enabledFromRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	updated, err := s.store.SetMetricDefinitionsEnabled(r.Context(), s.requestRegion(r), serviceName, enabled)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"updated": updated, "enabled": enabled, "serviceName": serviceName})
+}
+
 func (s *Server) handleAPIMetricCandidates(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
@@ -507,6 +576,30 @@ func (s *Server) handleAPIMetricCandidates(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSON(w, candidates)
+}
+
+func (s *Server) handleAPIMetricCandidatesSelectAvailable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	serviceName := strings.TrimSpace(r.URL.Query().Get("serviceName"))
+	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		var payload struct {
+			ServiceName string `json:"serviceName"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		serviceName = strings.TrimSpace(payload.ServiceName)
+	}
+	selected, err := s.store.SelectAvailableMetricCandidates(r.Context(), s.requestRegion(r), serviceName)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"selected": selected, "serviceName": serviceName})
 }
 
 func (s *Server) handleAPIMetricCandidateAction(w http.ResponseWriter, r *http.Request) {
@@ -834,6 +927,15 @@ const pageTemplate = `{{define "page"}}<!doctype html>
     </section>
     <section>
       <h2>Metric 후보</h2>
+      <div class="toolbar">
+        <form method="post" action="/admin/metric-candidates/select-available?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 available metric 후보를 일괄 수집 시작할까요?');">
+          <select name="service_name">
+            <option value="">전체 서비스</option>
+            {{range .Services}}<option value="{{.ServiceName}}">{{.ServiceName}}</option>{{end}}
+          </select>
+          <button type="submit">Available 일괄 수집 시작</button>
+        </form>
+      </div>
       <table>
         <thead><tr><th>상태</th><th>리소스</th><th>Metric</th><th>Provider</th><th>Reason</th><th>작업</th></tr></thead>
         <tbody>{{range .Candidates}}
@@ -856,6 +958,16 @@ const pageTemplate = `{{define "page"}}<!doctype html>
     </section>
     <section>
       <h2>Metric Definition</h2>
+      <div class="toolbar">
+        <form method="post" action="/admin/metric-definitions/bulk-enabled?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 metric definition 상태를 일괄 변경할까요?');">
+          <select name="service_name">
+            <option value="">전체 서비스</option>
+            {{range .Services}}<option value="{{.ServiceName}}">{{.ServiceName}}</option>{{end}}
+          </select>
+          <button type="submit" name="enabled" value="true">일괄 Enable</button>
+          <button type="submit" name="enabled" value="false" class="secondary">일괄 Disable</button>
+        </form>
+      </div>
       <table>
         <thead><tr><th>상태</th><th>서비스</th><th>Metric</th><th>Resource</th><th>Diagnostics</th><th>Dimensions</th><th>Public metadata</th><th>작업</th></tr></thead>
         <tbody>{{range .Definitions}}
