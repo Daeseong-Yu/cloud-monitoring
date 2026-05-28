@@ -954,7 +954,7 @@ const pageTemplate = `{{define "page"}}<!doctype html>
         </form>
       </div>
       <table>
-        <thead><tr><th>상태</th><th>서비스</th><th>표시 이름</th><th>Region</th><th>Metric</th><th>Public metadata</th><th>작업</th></tr></thead>
+        <thead><tr><th>상태</th><th>서비스</th><th>표시 이름</th><th>Region</th><th>Metric</th><th>작업</th></tr></thead>
         <tbody>{{range .Resources}}
           <tr>
             <td class="status">{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
@@ -962,15 +962,6 @@ const pageTemplate = `{{define "page"}}<!doctype html>
             <td>{{.DisplayName}}<br><span class="muted">{{.ResourceID}}</span></td>
             <td>{{.Region}}</td>
             <td>후보 {{.DiscoveredMetrics}} / available {{.AvailableMetrics}} / 선택 {{.SelectedMetrics}} / 수집 {{.MetricDefinitions}}</td>
-            <td>
-              <form method="post" action="/admin/resources/{{.ID}}/public?region={{$.Region}}" class="inline">
-                <label><input type="checkbox" name="public_enabled" {{if .PublicEnabled}}checked{{end}}> public</label>
-                <input name="public_display_name" value="{{.PublicDisplayName}}" placeholder="display">
-                <input name="public_label" value="{{.PublicLabel}}" placeholder="label">
-                <input name="public_sort_order" value="{{.PublicSortOrder}}" placeholder="sort">
-                <button class="secondary">저장</button>
-              </form>
-            </td>
             <td>
               {{if .Enabled}}
               <form method="post" action="/admin/resources/{{.ID}}/disable?region={{$.Region}}" class="inline"><button class="secondary">Disable</button></form>
@@ -983,20 +974,45 @@ const pageTemplate = `{{define "page"}}<!doctype html>
               </form>
             </td>
           </tr>
-        {{else}}<tr><td colspan="7" class="muted">발견된 리소스가 없습니다.</td></tr>{{end}}</tbody>
+        {{else}}<tr><td colspan="6" class="muted">발견된 리소스가 없습니다.</td></tr>{{end}}</tbody>
       </table>
+      <details>
+        <summary>Advanced public resource metadata</summary>
+        <p class="muted">Public portfolio는 나중에 별도 UX로 개편합니다. 임시 공개 테스트가 필요할 때만 사용합니다.</p>
+        <table>
+          <thead><tr><th>리소스</th><th>Public metadata</th></tr></thead>
+          <tbody>{{range .Resources}}
+            <tr>
+              <td>{{.DisplayName}}<br><span class="muted">{{.ServiceName}} / {{.Region}}</span></td>
+              <td>
+                <form method="post" action="/admin/resources/{{.ID}}/public?region={{$.Region}}" class="inline">
+                  <label><input type="checkbox" name="public_enabled" {{if .PublicEnabled}}checked{{end}}> public</label>
+                  <input name="public_display_name" value="{{.PublicDisplayName}}" placeholder="display">
+                  <input name="public_label" value="{{.PublicLabel}}" placeholder="label">
+                  <input name="public_sort_order" value="{{.PublicSortOrder}}" placeholder="sort">
+                  <button class="secondary">저장</button>
+                </form>
+              </td>
+            </tr>
+          {{else}}<tr><td colspan="2" class="muted">발견된 리소스가 없습니다.</td></tr>{{end}}</tbody>
+        </table>
+      </details>
     </section>
     <section>
       <h2>Metric 후보</h2>
-      <div class="toolbar">
-        <form method="post" action="/admin/metric-candidates/select-available?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 available metric 후보를 일괄 수집 시작할까요? 서비스 표의 Bulk preview에서 예상 개수를 확인하세요.');">
-          <select name="service_name">
-            <option value="">전체 서비스</option>
-            {{range .Services}}<option value="{{.ServiceName}}">{{.ServiceName}} - 수집 시작 {{.UnselectedAvailableMetrics}}</option>{{end}}
-          </select>
-          <button type="submit">Available 일괄 수집 시작</button>
-        </form>
-      </div>
+      <details>
+        <summary>Advanced candidate bulk actions</summary>
+        <p class="muted">추천 세트로 시작한 뒤, 추가 지표가 필요할 때만 available 후보 일괄 수집을 사용합니다.</p>
+        <div class="toolbar">
+          <form method="post" action="/admin/metric-candidates/select-available?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 available metric 후보를 일괄 수집 시작할까요? 서비스 표의 Bulk preview에서 예상 개수를 확인하세요.');">
+            <select name="service_name">
+              <option value="">전체 서비스</option>
+              {{range .Services}}<option value="{{.ServiceName}}">{{.ServiceName}} - 수집 시작 {{.UnselectedAvailableMetrics}}</option>{{end}}
+            </select>
+            <button type="submit" class="secondary">Available 일괄 수집 시작</button>
+          </form>
+        </div>
+      </details>
       <table>
         <thead><tr><th>상태</th><th>리소스</th><th>Metric</th><th>Provider</th><th>Reason</th><th>작업</th></tr></thead>
         <tbody>{{range .Candidates}}
@@ -1030,7 +1046,7 @@ const pageTemplate = `{{define "page"}}<!doctype html>
         </form>
       </div>
       <table>
-        <thead><tr><th>상태</th><th>서비스</th><th>Metric</th><th>Resource</th><th>Diagnostics</th><th>Dimensions</th><th>Public metadata</th><th>작업</th></tr></thead>
+        <thead><tr><th>상태</th><th>서비스</th><th>Metric</th><th>Resource</th><th>Diagnostics</th><th>Dimensions</th><th>작업</th></tr></thead>
         <tbody>{{range .Definitions}}
           <tr>
             <td class="status">{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
@@ -1045,13 +1061,6 @@ const pageTemplate = `{{define "page"}}<!doctype html>
             </td>
             <td><code>{{.DimensionsJSON}}</code></td>
             <td>
-              <form method="post" action="/admin/metric-definitions/{{.ID}}/public?region={{$.Region}}" class="inline">
-                <label><input type="checkbox" name="public_enabled" {{if .PublicEnabled}}checked{{end}}> public</label>
-                <input name="public_label" value="{{.PublicLabel}}" placeholder="label">
-                <button class="secondary">저장</button>
-              </form>
-            </td>
-            <td>
               {{if .Enabled}}
               <form method="post" action="/admin/metric-definitions/{{.ID}}/disable?region={{$.Region}}" class="inline"><button class="secondary">Disable</button></form>
               {{else}}
@@ -1060,8 +1069,27 @@ const pageTemplate = `{{define "page"}}<!doctype html>
               <form method="post" action="/admin/metric-definitions/{{.ID}}/delete?region={{$.Region}}" class="inline"><button class="secondary">삭제</button></form>
             </td>
           </tr>
-        {{else}}<tr><td colspan="8" class="muted">등록된 metric definition이 없습니다.</td></tr>{{end}}</tbody>
+        {{else}}<tr><td colspan="7" class="muted">등록된 metric definition이 없습니다.</td></tr>{{end}}</tbody>
       </table>
+      <details>
+        <summary>Advanced public metric metadata</summary>
+        <p class="muted">Public portfolio는 나중에 별도 UX로 개편합니다. 임시 공개 테스트가 필요할 때만 사용합니다.</p>
+        <table>
+          <thead><tr><th>Metric</th><th>Public metadata</th></tr></thead>
+          <tbody>{{range .Definitions}}
+            <tr>
+              <td>{{.MetricName}}<br><span class="muted">{{.ServiceName}} / {{.ResourceID}}</span></td>
+              <td>
+                <form method="post" action="/admin/metric-definitions/{{.ID}}/public?region={{$.Region}}" class="inline">
+                  <label><input type="checkbox" name="public_enabled" {{if .PublicEnabled}}checked{{end}}> public</label>
+                  <input name="public_label" value="{{.PublicLabel}}" placeholder="label">
+                  <button class="secondary">저장</button>
+                </form>
+              </td>
+            </tr>
+          {{else}}<tr><td colspan="2" class="muted">등록된 metric definition이 없습니다.</td></tr>{{end}}</tbody>
+        </table>
+      </details>
       <details>
         <summary>Advanced manual metric definition</summary>
         <form method="post" action="/admin/metric-definitions?region={{.Region}}" class="grid">

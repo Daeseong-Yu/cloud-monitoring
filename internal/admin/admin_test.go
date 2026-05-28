@@ -318,10 +318,19 @@ func TestAdminBulkActionsRequireConfirmation(t *testing.T) {
 		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	for _, expected := range []string{"추천 세트 일괄 적용", "Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm(", "Bulk preview", "수집 시작 2", "enable 5 / disable 4"} {
+	for _, expected := range []string{"추천 세트 일괄 적용", "Advanced candidate bulk actions", "Advanced public resource metadata", "Advanced public metric metadata", "Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm(", "Bulk preview", "수집 시작 2", "enable 5 / disable 4"} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("admin page does not include bulk action confirmation marker %q", expected)
 		}
+	}
+	if strings.Index(body, "추천 세트 일괄 적용") > strings.Index(body, "Advanced candidate bulk actions") {
+		t.Fatal("recommended bulk setup should appear before advanced available candidate bulk action")
+	}
+	if strings.Index(body, "Advanced public resource metadata") < strings.Index(body, "추천 세트 일괄 적용") {
+		t.Fatal("public resource metadata should not appear before recommended setup")
+	}
+	if strings.Index(body, "Advanced public metric metadata") < strings.Index(body, "일괄 Enable") {
+		t.Fatal("public metric metadata should not appear before collection controls")
 	}
 }
 
