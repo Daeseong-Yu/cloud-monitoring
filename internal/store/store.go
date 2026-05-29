@@ -466,6 +466,7 @@ LEFT JOIN discovered_metrics dm ON dm.resource_id = r.id
 LEFT JOIN metric_definitions md
     ON md.resource_id = r.resource_id
     AND md.region = r.region
+    AND md.service_name = r.service_name
 WHERE ($1 = '' OR r.region = $1)
 GROUP BY r.id
 ORDER BY r.region, r.service_name, r.display_name, r.resource_id`
@@ -481,6 +482,54 @@ ORDER BY r.region, r.service_name, r.display_name, r.resource_id`
 		return nil, fmt.Errorf("scan admin resources: %w", err)
 	}
 	return resources, nil
+}
+
+func (s *Store) GetAdminResource(ctx context.Context, id int64) (AdminResource, error) {
+	const query = `
+SELECT
+    r.id,
+    r.service_name,
+    r.namespace,
+    r.resource_id,
+    r.region,
+    r.display_name,
+    r.tags::text,
+    COALESCE(r.provider_source, ''),
+    COALESCE(r.discovery_source, ''),
+    COALESCE(NULLIF(r.internal_region_label, ''), r.region),
+    r.public_enabled,
+    r.public_display_name,
+    r.public_description,
+    r.public_label,
+    r.public_sort_order,
+    r.enabled,
+    COUNT(DISTINCT dm.id) AS discovered_metrics,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.availability_status = 'available') AS available_metrics,
+    COUNT(DISTINCT dm.id) FILTER (WHERE dm.selected = TRUE) AS selected_metrics,
+    COUNT(DISTINCT md.id) AS metric_definitions
+FROM resources r
+LEFT JOIN discovered_metrics dm ON dm.resource_id = r.id
+LEFT JOIN metric_definitions md
+    ON md.resource_id = r.resource_id
+    AND md.region = r.region
+    AND md.service_name = r.service_name
+WHERE r.id = $1
+GROUP BY r.id`
+
+	rows, err := s.pool.Query(ctx, query, id)
+	if err != nil {
+		return AdminResource{}, fmt.Errorf("query admin resource: %w", err)
+	}
+	defer rows.Close()
+
+	resources, err := pgx.CollectRows(rows, pgx.RowToStructByPos[AdminResource])
+	if err != nil {
+		return AdminResource{}, fmt.Errorf("scan admin resource: %w", err)
+	}
+	if len(resources) == 0 {
+		return AdminResource{}, fmt.Errorf("resource not found")
+	}
+	return resources[0], nil
 }
 
 func (s *Store) ListAdminMetricCandidates(ctx context.Context, region string) ([]AdminMetricCandidate, error) {
@@ -529,13 +578,14 @@ func (s *Store) SetResourceEnabled(ctx context.Context, id int64, enabled bool) 
 	}
 	defer tx.Rollback(ctx)
 
+	var serviceName string
 	var resourceID string
 	var region string
 	err = tx.QueryRow(ctx, `
 UPDATE resources
 SET enabled = $2, updated_at = now()
 WHERE id = $1
-RETURNING resource_id, region`, id, enabled).Scan(&resourceID, &region)
+RETURNING service_name, resource_id, region`, id, enabled).Scan(&serviceName, &resourceID, &region)
 	if err == pgx.ErrNoRows {
 		return fmt.Errorf("resource not found")
 	}
@@ -547,7 +597,8 @@ RETURNING resource_id, region`, id, enabled).Scan(&resourceID, &region)
 UPDATE metric_definitions
 SET enabled = $3, updated_at = now()
 WHERE resource_id = $1
-  AND region = $2`, resourceID, region, enabled); err != nil {
+  AND region = $2
+  AND service_name = $4`, resourceID, region, enabled, serviceName); err != nil {
 		return fmt.Errorf("update resource metric definitions enabled: %w", err)
 	}
 
@@ -555,6 +606,58 @@ WHERE resource_id = $1
 		return fmt.Errorf("commit resource enabled update: %w", err)
 	}
 	return nil
+}
+
+func (s *Store) SetResourcesEnabled(ctx context.Context, region string, serviceName string, enabled bool) (int64, error) {
+	region = strings.TrimSpace(region)
+	serviceName = strings.TrimSpace(serviceName)
+	if serviceName == "" {
+		return 0, fmt.Errorf("service_name is required")
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin resources enabled update: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	rows, err := tx.Query(ctx, `
+UPDATE resources
+SET enabled = $3, updated_at = now()
+WHERE service_name = $1
+  AND ($2 = '' OR region = $2)
+RETURNING id`, serviceName, region, enabled)
+	if err != nil {
+		return 0, fmt.Errorf("update resources enabled: %w", err)
+	}
+	var updated int64
+	for rows.Next() {
+		updated++
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("iterate updated resources: %w", err)
+	}
+	rows.Close()
+
+	if updated > 0 {
+		if _, err := tx.Exec(ctx, `
+UPDATE metric_definitions md
+SET enabled = $3, updated_at = now()
+FROM resources r
+WHERE r.service_name = $1
+  AND ($2 = '' OR r.region = $2)
+  AND md.service_name = r.service_name
+  AND md.resource_id = r.resource_id
+  AND md.region = r.region`, serviceName, region, enabled); err != nil {
+			return 0, fmt.Errorf("update service metric definitions enabled: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit resources enabled update: %w", err)
+	}
+	return updated, nil
 }
 
 func (s *Store) UpdateResourcePublicMetadata(ctx context.Context, id int64, input PublicMetadataInput) error {

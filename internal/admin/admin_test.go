@@ -13,15 +13,18 @@ import (
 )
 
 type fakeStore struct {
-	resourceEnabled bool
-	selectedMetric  bool
-	resourcePublic  store.PublicMetadataInput
-	metricPublic    store.PublicMetadataInput
-	publicMetrics   []store.PublicMetric
-	bulkSelected    int64
-	bulkEnabled     bool
-	bulkUpdated     int64
-	bulkRecommended store.RecommendedMetricSetApplyResult
+	resourceEnabled  bool
+	resourcesEnabled bool
+	resourcesUpdated int64
+	appliedDefault   int64
+	selectedMetric   bool
+	resourcePublic   store.PublicMetadataInput
+	metricPublic     store.PublicMetadataInput
+	publicMetrics    []store.PublicMetric
+	bulkSelected     int64
+	bulkEnabled      bool
+	bulkUpdated      int64
+	bulkRecommended  store.RecommendedMetricSetApplyResult
 }
 
 func (s *fakeStore) ListAdminServices(context.Context, string) ([]store.AdminService, error) {
@@ -41,9 +44,19 @@ func (s *fakeStore) ListAdminResources(context.Context, string) ([]store.AdminRe
 	return []store.AdminResource{{ID: 1, ServiceName: "lambda", Namespace: "AWS/Lambda", ResourceID: "orders-api", Region: "us-east-1", DisplayName: "Orders API"}}, nil
 }
 
+func (s *fakeStore) GetAdminResource(context.Context, int64) (store.AdminResource, error) {
+	return store.AdminResource{ID: 1, ServiceName: "lambda", Namespace: "AWS/Lambda", ResourceID: "orders-api", Region: "us-east-1", DisplayName: "Orders API"}, nil
+}
+
 func (s *fakeStore) SetResourceEnabled(_ context.Context, _ int64, enabled bool) error {
 	s.resourceEnabled = enabled
 	return nil
+}
+
+func (s *fakeStore) SetResourcesEnabled(_ context.Context, _ string, _ string, enabled bool) (int64, error) {
+	s.resourcesEnabled = enabled
+	s.resourcesUpdated = 2
+	return s.resourcesUpdated, nil
 }
 
 func (s *fakeStore) UpdateResourcePublicMetadata(_ context.Context, _ int64, input store.PublicMetadataInput) error {
@@ -134,6 +147,7 @@ func (s *fakeStore) DeleteMetricDefinition(context.Context, int64) error {
 }
 
 func (s *fakeStore) ApplyRecommendedMetricSet(context.Context, int64, []store.RecommendedMetric) (int64, error) {
+	s.appliedDefault++
 	return 1, nil
 }
 
@@ -284,7 +298,18 @@ func TestPublicMetricSeriesReturnsOnlyPoints(t *testing.T) {
 
 func TestAPIResourceEnableUsesBasicAuth(t *testing.T) {
 	st := &fakeStore{}
-	server, err := NewServer(Config{Store: st, Username: "admin", Password: "secret", Region: "us-east-1"})
+	server, err := NewServer(Config{
+		Store:    st,
+		Username: "admin",
+		Password: "secret",
+		Region:   "us-east-1",
+		MetricSets: []MetricSet{{
+			ServiceName: "lambda",
+			Namespace:   "AWS/Lambda",
+			Name:        "lambda-default",
+			Metrics:     []store.RecommendedMetric{{MetricName: "Errors", Statistic: "Sum", PeriodSeconds: 300, Unit: "Count"}},
+		}},
+	})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -301,10 +326,27 @@ func TestAPIResourceEnableUsesBasicAuth(t *testing.T) {
 	if !st.resourceEnabled {
 		t.Fatal("expected resource to be enabled")
 	}
+	if st.appliedDefault != 1 {
+		t.Fatalf("appliedDefault = %d, want 1", st.appliedDefault)
+	}
+	if !strings.Contains(response.Body.String(), `"appliedDefaultMetrics":1`) {
+		t.Fatalf("response does not include default metric result: %s", response.Body.String())
+	}
 }
 
-func TestAdminBulkActionsRequireConfirmation(t *testing.T) {
-	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
+func TestAdminMonitoringFlowUsesServiceResourceSelection(t *testing.T) {
+	server, err := NewServer(Config{
+		Store:    &fakeStore{},
+		Username: "admin",
+		Password: "secret",
+		Region:   "us-east-1",
+		MetricSets: []MetricSet{{
+			ServiceName: "lambda",
+			Namespace:   "AWS/Lambda",
+			Name:        "lambda-default",
+			Metrics:     []store.RecommendedMetric{{MetricName: "Errors", Statistic: "Sum", PeriodSeconds: 300, Unit: "Count"}},
+		}},
+	})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
@@ -318,19 +360,59 @@ func TestAdminBulkActionsRequireConfirmation(t *testing.T) {
 		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	for _, expected := range []string{"추천 세트 일괄 적용", "Advanced candidate bulk actions", "Advanced public resource metadata", "Advanced public metric metadata", "Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm(", "Bulk preview", "수집 시작 2", "enable 5 / disable 4"} {
+	for _, expected := range []string{"기본 metric이 자동 적용", "서비스 모니터링 시작", "서비스 모니터링 중지", "모니터링 시작", "Advanced public resource metadata", "Metric candidate diagnostics", "Metric definition diagnostics", "Available 일괄 수집 시작", "일괄 Enable", "일괄 Disable", "confirm(", "enabled 4 / disabled 5"} {
 		if !strings.Contains(body, expected) {
-			t.Fatalf("admin page does not include bulk action confirmation marker %q", expected)
+			t.Fatalf("admin page does not include monitoring flow marker %q", expected)
 		}
 	}
-	if strings.Index(body, "추천 세트 일괄 적용") > strings.Index(body, "Advanced candidate bulk actions") {
-		t.Fatal("recommended bulk setup should appear before advanced available candidate bulk action")
+	for _, unexpected := range []string{"추천 세트 일괄 적용", "/admin/metric-candidates/1/select", "Advanced public metric metadata"} {
+		if strings.Contains(body, unexpected) {
+			t.Fatalf("admin page includes obsolete default-flow marker %q", unexpected)
+		}
 	}
-	if strings.Index(body, "Advanced public resource metadata") < strings.Index(body, "추천 세트 일괄 적용") {
-		t.Fatal("public resource metadata should not appear before recommended setup")
+	if strings.Index(body, "서비스 모니터링 시작") > strings.Index(body, "Metric candidate diagnostics") {
+		t.Fatal("service monitoring should appear before advanced metric diagnostics")
 	}
-	if strings.Index(body, "Advanced public metric metadata") < strings.Index(body, "일괄 Enable") {
-		t.Fatal("public metric metadata should not appear before collection controls")
+	if strings.Index(body, "Advanced public resource metadata") < strings.Index(body, "서비스 모니터링 시작") {
+		t.Fatal("public resource metadata should not appear before monitoring controls")
+	}
+}
+
+func TestAPIResourcesBulkEnableAppliesDefaultMetricSet(t *testing.T) {
+	st := &fakeStore{}
+	server, err := NewServer(Config{
+		Store:    st,
+		Username: "admin",
+		Password: "secret",
+		Region:   "us-east-1",
+		MetricSets: []MetricSet{{
+			ServiceName: "lambda",
+			Namespace:   "AWS/Lambda",
+			Name:        "lambda-default",
+			Metrics:     []store.RecommendedMetric{{MetricName: "Errors", Statistic: "Sum", PeriodSeconds: 300, Unit: "Count"}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	request := httptest.NewRequest(http.MethodPatch, "/api/resources/bulk-enabled", strings.NewReader(`{"enabled":true,"serviceName":"lambda"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.SetBasicAuth("admin", "secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
+	}
+	if !st.resourcesEnabled || st.resourcesUpdated != 2 {
+		t.Fatalf("resources enabled=%v updated=%d, want true/2", st.resourcesEnabled, st.resourcesUpdated)
+	}
+	if st.bulkRecommended.ResourceCount != 2 || st.bulkRecommended.AppliedCount != 8 {
+		t.Fatalf("bulk default metric result = %#v, want 2 resources and 8 applied", st.bulkRecommended)
+	}
+	if !strings.Contains(response.Body.String(), `"appliedDefaultMetrics":8`) {
+		t.Fatalf("response does not include default metric result: %s", response.Body.String())
 	}
 }
 
@@ -533,8 +615,8 @@ func TestLoadMetricSets(t *testing.T) {
 	}
 }
 
-func TestLoadMetricSetsFromProductCatalog(t *testing.T) {
-	sets, err := LoadMetricSetsFromProductCatalog(strings.NewReader(`{
+func TestLoadDefaultMetricSetsFromProductCatalog(t *testing.T) {
+	sets, err := LoadDefaultMetricSetsFromProductCatalog(strings.NewReader(`{
 	  "version": 1,
 	  "metrics": [
 	    {
@@ -568,12 +650,12 @@ func TestLoadMetricSetsFromProductCatalog(t *testing.T) {
 	  ]
 	}`))
 	if err != nil {
-		t.Fatalf("load metric sets from product catalog: %v", err)
+		t.Fatalf("load default metric sets from product catalog: %v", err)
 	}
 	if len(sets) != 1 || sets[0].Name != "lambda-default" {
 		t.Fatalf("unexpected metric sets: %#v", sets)
 	}
 	if len(sets[0].Metrics) != 1 || sets[0].Metrics[0].MetricName != "Errors" {
-		t.Fatalf("unexpected recommended metrics: %#v", sets[0].Metrics)
+		t.Fatalf("unexpected default metrics: %#v", sets[0].Metrics)
 	}
 }

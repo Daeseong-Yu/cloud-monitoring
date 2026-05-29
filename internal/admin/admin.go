@@ -19,7 +19,9 @@ type Store interface {
 	CollectionCostEstimate(context.Context, string, int64) (store.CollectionCostEstimate, error)
 	ListPublicMetrics(context.Context) ([]store.PublicMetric, error)
 	ListPublicMetricSeries(context.Context, string, int32) ([]store.PublicMetricSeriesPoint, error)
+	GetAdminResource(context.Context, int64) (store.AdminResource, error)
 	SetResourceEnabled(context.Context, int64, bool) error
+	SetResourcesEnabled(context.Context, string, string, bool) (int64, error)
 	UpdateResourcePublicMetadata(context.Context, int64, store.PublicMetadataInput) error
 	ListAdminMetricDefinitions(context.Context, string) ([]store.AdminMetricDefinition, error)
 	UpsertMetricDefinition(context.Context, store.MetricDefinitionInput) (int64, error)
@@ -105,6 +107,7 @@ func (s *Server) Handler() http.Handler {
 	adminMux.HandleFunc("/", s.redirectRoot)
 	adminMux.HandleFunc("/admin", s.handleAdmin)
 	adminMux.HandleFunc("/admin/discovery/run", s.handleRunDiscovery)
+	adminMux.HandleFunc("/admin/resources/bulk-enabled", s.handleAdminResourcesBulkEnabled)
 	adminMux.HandleFunc("/admin/resources/apply-metric-set", s.handleAdminResourcesApplyMetricSet)
 	adminMux.HandleFunc("/admin/resources/", s.handleAdminResourceAction)
 	adminMux.HandleFunc("/admin/metric-candidates/select-available", s.handleAdminMetricCandidatesSelectAvailable)
@@ -115,6 +118,7 @@ func (s *Server) Handler() http.Handler {
 	adminMux.HandleFunc("/api/services", s.handleAPIServices)
 	adminMux.HandleFunc("/api/cost-estimate", s.handleAPICostEstimate)
 	adminMux.HandleFunc("/api/resources", s.handleAPIResources)
+	adminMux.HandleFunc("/api/resources/bulk-enabled", s.handleAPIResourcesBulkEnabled)
 	adminMux.HandleFunc("/api/resources/apply-metric-set", s.handleAPIResourcesApplyMetricSet)
 	adminMux.HandleFunc("/api/resources/", s.handleAPIResourceAction)
 	adminMux.HandleFunc("/api/metric-candidates", s.handleAPIMetricCandidates)
@@ -305,7 +309,7 @@ func (s *Server) handleAdminResourceAction(w http.ResponseWriter, r *http.Reques
 	}
 	switch action {
 	case "enable":
-		err = s.store.SetResourceEnabled(r.Context(), id, true)
+		_, err = s.enableResourceMonitoring(r.Context(), id)
 	case "disable":
 		err = s.store.SetResourceEnabled(r.Context(), id, false)
 	case "apply-metric-set":
@@ -325,6 +329,29 @@ func (s *Server) handleAdminResourceAction(w http.ResponseWriter, r *http.Reques
 	default:
 		http.NotFound(w, r)
 		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	http.Redirect(w, r, "/admin?region="+s.requestRegion(r), http.StatusSeeOther)
+}
+
+func (s *Server) handleAdminResourcesBulkEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	serviceName := strings.TrimSpace(r.FormValue("service_name"))
+	enabled, err := enabledFromRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if enabled {
+		_, err = s.enableServiceMonitoring(r.Context(), s.requestRegion(r), serviceName)
+	} else {
+		_, err = s.store.SetResourcesEnabled(r.Context(), s.requestRegion(r), serviceName, false)
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -487,6 +514,56 @@ func (s *Server) handleAPIResources(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, resources)
 }
 
+func (s *Server) handleAPIResourcesBulkEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch && r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	serviceName := strings.TrimSpace(r.URL.Query().Get("serviceName"))
+	enabled := false
+	if strings.Contains(r.Header.Get("Content-Type"), "application/json") {
+		var payload struct {
+			ServiceName string `json:"serviceName"`
+			Enabled     bool   `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		serviceName = strings.TrimSpace(payload.ServiceName)
+		enabled = payload.Enabled
+	} else {
+		parsed, err := enabledFromRequest(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		enabled = parsed
+	}
+	var result store.RecommendedMetricSetApplyResult
+	if enabled {
+		var err error
+		result, err = s.enableServiceMonitoring(r.Context(), s.requestRegion(r), serviceName)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	} else {
+		updated, err := s.store.SetResourcesEnabled(r.Context(), s.requestRegion(r), serviceName, false)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		result.ResourceCount = updated
+	}
+	writeJSON(w, map[string]any{
+		"serviceName":           serviceName,
+		"enabled":               enabled,
+		"resourceCount":         result.ResourceCount,
+		"appliedDefaultMetrics": result.AppliedCount,
+	})
+}
+
 func (s *Server) handleAPIResourcesApplyMetricSet(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
@@ -538,11 +615,17 @@ func (s *Server) handleAPIResourceAction(w http.ResponseWriter, r *http.Request)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := s.store.SetResourceEnabled(r.Context(), id, enabled); err != nil {
+		applied := int64(0)
+		if enabled {
+			applied, err = s.enableResourceMonitoring(r.Context(), id)
+		} else {
+			err = s.store.SetResourceEnabled(r.Context(), id, false)
+		}
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, map[string]any{"id": id, "enabled": enabled})
+		writeJSON(w, map[string]any{"id": id, "enabled": enabled, "appliedDefaultMetrics": applied})
 	case "public":
 		input, err := publicMetadataInputFromRequest(r)
 		if err != nil {
@@ -723,6 +806,68 @@ func (s *Server) requestRegion(r *http.Request) string {
 		region = s.region
 	}
 	return region
+}
+
+func (s *Server) enableResourceMonitoring(ctx context.Context, id int64) (int64, error) {
+	resource, err := s.store.GetAdminResource(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	metricSets := s.metricSetsForService(resource.ServiceName)
+	if len(metricSets) == 0 {
+		return 0, fmt.Errorf("default metric set not found for service %s", resource.ServiceName)
+	}
+	var applied int64
+	for _, metricSet := range metricSets {
+		count, err := s.store.ApplyRecommendedMetricSet(ctx, id, metricSet.Metrics)
+		if err != nil {
+			return 0, err
+		}
+		applied += count
+	}
+	if err := s.store.SetResourceEnabled(ctx, id, true); err != nil {
+		return 0, err
+	}
+	return applied, nil
+}
+
+func (s *Server) enableServiceMonitoring(ctx context.Context, region string, serviceName string) (store.RecommendedMetricSetApplyResult, error) {
+	serviceName = strings.TrimSpace(serviceName)
+	if serviceName == "" {
+		return store.RecommendedMetricSetApplyResult{}, fmt.Errorf("service_name is required")
+	}
+	metricSets := s.metricSetsForService(serviceName)
+	if len(metricSets) == 0 {
+		return store.RecommendedMetricSetApplyResult{}, fmt.Errorf("default metric set not found for service %s", serviceName)
+	}
+	var result store.RecommendedMetricSetApplyResult
+	for _, metricSet := range metricSets {
+		applied, err := s.store.ApplyRecommendedMetricSetToResources(ctx, region, serviceName, metricSet.Metrics)
+		if err != nil {
+			return store.RecommendedMetricSetApplyResult{}, err
+		}
+		if applied.ResourceCount > result.ResourceCount {
+			result.ResourceCount = applied.ResourceCount
+		}
+		result.AppliedCount += applied.AppliedCount
+	}
+	updated, err := s.store.SetResourcesEnabled(ctx, region, serviceName, true)
+	if err != nil {
+		return store.RecommendedMetricSetApplyResult{}, err
+	}
+	result.ResourceCount = updated
+	return result, nil
+}
+
+func (s *Server) metricSetsForService(serviceName string) []MetricSet {
+	serviceName = strings.TrimSpace(serviceName)
+	var matches []MetricSet
+	for _, metricSet := range s.metricSets {
+		if strings.TrimSpace(metricSet.ServiceName) == serviceName {
+			matches = append(matches, metricSet)
+		}
+	}
+	return matches
 }
 
 func (s *Server) metricSetByName(name string) (MetricSet, bool) {
@@ -932,27 +1077,32 @@ const pageTemplate = `{{define "page"}}<!doctype html>
         {{if .Cost.CostWarningMetricCount}}<span class="warning">Cost warning metrics {{.Cost.CostWarningMetricCount}}</span>{{end}}
       </div>
       <p class="muted">{{.Cost.PricingNote}}</p>
+      <p class="muted">서비스 또는 리소스의 모니터링을 시작하면 product metric catalog의 기본 metric이 자동 적용됩니다.</p>
       <table>
-        <thead><tr><th>서비스</th><th>리소스</th><th>Metric 후보</th><th>선택</th><th>Bulk preview</th></tr></thead>
+        <thead><tr><th>서비스</th><th>리소스</th><th>Metric 상태</th><th>기본 metric</th><th>모니터링</th></tr></thead>
         <tbody>{{range .Services}}
           <tr>
             <td>{{.ServiceName}}<br><span class="muted">{{.Namespace}}</span></td>
             <td>{{.ResourceCount}}</td>
             <td>available {{.AvailableMetrics}} / setup {{.RequiresSetup}} / unsupported {{.UnsupportedMetrics}}</td>
-            <td>{{.SelectedMetrics}}</td>
-            <td>수집 시작 {{.UnselectedAvailableMetrics}} / enable {{.DisabledMetricDefinitions}} / disable {{.EnabledMetricDefinitions}}</td>
+            <td>selected {{.SelectedMetrics}} / enabled {{.EnabledMetricDefinitions}} / disabled {{.DisabledMetricDefinitions}}</td>
+            <td>
+              <form method="post" action="/admin/resources/bulk-enabled?region={{$.Region}}" class="inline" onsubmit="return confirm('이 서비스의 리소스 모니터링을 시작하고 기본 metric을 자동 적용할까요?');">
+                <input type="hidden" name="service_name" value="{{.ServiceName}}">
+                <button type="submit" name="enabled" value="true">서비스 모니터링 시작</button>
+              </form>
+              <form method="post" action="/admin/resources/bulk-enabled?region={{$.Region}}" class="inline" onsubmit="return confirm('이 서비스의 모든 리소스 모니터링을 중지할까요?');">
+                <input type="hidden" name="service_name" value="{{.ServiceName}}">
+                <button type="submit" name="enabled" value="false" class="secondary">서비스 모니터링 중지</button>
+              </form>
+            </td>
           </tr>
         {{else}}<tr><td colspan="5" class="muted">Discovery를 실행하면 서비스가 표시됩니다.</td></tr>{{end}}</tbody>
       </table>
     </section>
     <section>
       <h2>리소스</h2>
-      <div class="toolbar">
-        <form method="post" action="/admin/resources/apply-metric-set?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 추천 metric set을 해당 서비스의 모든 리소스에 적용할까요? 서비스 표의 리소스 수와 Bulk preview를 확인하세요.');">
-          <select name="metric_set">{{range .MetricSets}}<option value="{{.Name}}">{{.Name}} - {{len .Metrics}} metrics</option>{{end}}</select>
-          <button type="submit">추천 세트 일괄 적용</button>
-        </form>
-      </div>
+      <p class="muted">개별 리소스 모니터링을 시작해도 해당 서비스의 기본 metric이 자동 적용됩니다.</p>
       <table>
         <thead><tr><th>상태</th><th>서비스</th><th>표시 이름</th><th>Region</th><th>Metric</th><th>작업</th></tr></thead>
         <tbody>{{range .Resources}}
@@ -964,21 +1114,17 @@ const pageTemplate = `{{define "page"}}<!doctype html>
             <td>후보 {{.DiscoveredMetrics}} / available {{.AvailableMetrics}} / 선택 {{.SelectedMetrics}} / 수집 {{.MetricDefinitions}}</td>
             <td>
               {{if .Enabled}}
-              <form method="post" action="/admin/resources/{{.ID}}/disable?region={{$.Region}}" class="inline"><button class="secondary">Disable</button></form>
+              <form method="post" action="/admin/resources/{{.ID}}/disable?region={{$.Region}}" class="inline"><button class="secondary">모니터링 중지</button></form>
               {{else}}
-              <form method="post" action="/admin/resources/{{.ID}}/enable?region={{$.Region}}" class="inline"><button>Enable</button></form>
+              <form method="post" action="/admin/resources/{{.ID}}/enable?region={{$.Region}}" class="inline"><button>모니터링 시작</button></form>
               {{end}}
-              <form method="post" action="/admin/resources/{{.ID}}/apply-metric-set?region={{$.Region}}" class="inline">
-                <select name="metric_set">{{range $.MetricSets}}<option value="{{.Name}}">{{.Name}}</option>{{end}}</select>
-                <button class="secondary">추천 적용</button>
-              </form>
             </td>
           </tr>
         {{else}}<tr><td colspan="6" class="muted">발견된 리소스가 없습니다.</td></tr>{{end}}</tbody>
       </table>
       <details>
         <summary>Advanced public resource metadata</summary>
-        <p class="muted">Public portfolio는 나중에 별도 UX로 개편합니다. 임시 공개 테스트가 필요할 때만 사용합니다.</p>
+        <p class="muted">Grafana 공개 dashboard에 표시할 리소스를 명시적으로 opt-in할 때만 사용합니다.</p>
         <table>
           <thead><tr><th>리소스</th><th>Public metadata</th></tr></thead>
           <tbody>{{range .Resources}}
@@ -999,10 +1145,10 @@ const pageTemplate = `{{define "page"}}<!doctype html>
       </details>
     </section>
     <section>
-      <h2>Metric 후보</h2>
+      <h2>Advanced metric diagnostics</h2>
       <details>
-        <summary>Advanced candidate bulk actions</summary>
-        <p class="muted">추천 세트로 시작한 뒤, 추가 지표가 필요할 때만 available 후보 일괄 수집을 사용합니다.</p>
+        <summary>Metric candidate diagnostics</summary>
+        <p class="muted">기본 metric 자동 적용 결과를 진단할 때만 사용합니다. 일반 모니터링 설정은 서비스/리소스에서 시작합니다.</p>
         <div class="toolbar">
           <form method="post" action="/admin/metric-candidates/select-available?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 available metric 후보를 일괄 수집 시작할까요? 서비스 표의 Bulk preview에서 예상 개수를 확인하세요.');">
             <select name="service_name">
@@ -1012,30 +1158,23 @@ const pageTemplate = `{{define "page"}}<!doctype html>
             <button type="submit" class="secondary">Available 일괄 수집 시작</button>
           </form>
         </div>
+        <table>
+          <thead><tr><th>상태</th><th>리소스</th><th>Metric</th><th>Provider</th><th>Reason</th></tr></thead>
+          <tbody>{{range .Candidates}}
+            <tr>
+              <td class="status">{{if .Selected}}selected{{else}}{{.AvailabilityStatus}}{{end}}</td>
+              <td>{{.DisplayName}}<br><span class="muted">{{.ServiceName}} / {{.Region}}</span></td>
+              <td>{{.MetricName}}<br><span class="muted">{{.Namespace}} / {{.Statistic}} / {{.PeriodSeconds}}s / {{.Unit}}</span></td>
+              <td>{{.ProviderSource}}</td>
+              <td><span class="{{if ne .AvailabilityStatus "available"}}warning{{else}}muted{{end}}">{{.AvailabilityReason}}</span><br><span class="muted">{{.Prerequisite}} {{.CostWarning}}</span></td>
+            </tr>
+          {{else}}<tr><td colspan="5" class="muted">Metric 후보가 없습니다.</td></tr>{{end}}</tbody>
+        </table>
       </details>
-      <table>
-        <thead><tr><th>상태</th><th>리소스</th><th>Metric</th><th>Provider</th><th>Reason</th><th>작업</th></tr></thead>
-        <tbody>{{range .Candidates}}
-          <tr>
-            <td class="status">{{if .Selected}}selected{{else}}{{.AvailabilityStatus}}{{end}}</td>
-            <td>{{.DisplayName}}<br><span class="muted">{{.ServiceName}} / {{.Region}}</span></td>
-            <td>{{.MetricName}}<br><span class="muted">{{.Namespace}} / {{.Statistic}} / {{.PeriodSeconds}}s / {{.Unit}}</span></td>
-            <td>{{.ProviderSource}}</td>
-            <td><span class="{{if ne .AvailabilityStatus "available"}}warning{{else}}muted{{end}}">{{.AvailabilityReason}}</span><br><span class="muted">{{.Prerequisite}} {{.CostWarning}}</span></td>
-            <td>
-              {{if eq .AvailabilityStatus "available"}}
-                {{if .Selected}}<span class="muted">적용됨</span>{{else}}<form method="post" action="/admin/metric-candidates/{{.ID}}/select?region={{$.Region}}" class="inline"><button>수집 시작</button></form>{{end}}
-              {{else}}
-                <span class="muted">설정 필요</span>
-              {{end}}
-            </td>
-          </tr>
-        {{else}}<tr><td colspan="6" class="muted">Metric 후보가 없습니다.</td></tr>{{end}}</tbody>
-      </table>
-    </section>
-    <section>
-      <h2>Metric Definition</h2>
-      <div class="toolbar">
+      <details>
+        <summary>Metric definition diagnostics</summary>
+        <p class="muted">기본 metric 수집 상태를 확인하거나 예외적인 내부 조정을 할 때만 사용합니다.</p>
+        <div class="toolbar">
         <form method="post" action="/admin/metric-definitions/bulk-enabled?region={{.Region}}" class="inline" onsubmit="return confirm('선택한 범위의 metric definition 상태를 일괄 변경할까요? 서비스 표의 Bulk preview에서 예상 개수를 확인하세요.');">
           <select name="service_name">
             <option value="">전체 서비스</option>
@@ -1044,50 +1183,32 @@ const pageTemplate = `{{define "page"}}<!doctype html>
           <button type="submit" name="enabled" value="true">일괄 Enable</button>
           <button type="submit" name="enabled" value="false" class="secondary">일괄 Disable</button>
         </form>
-      </div>
-      <table>
-        <thead><tr><th>상태</th><th>서비스</th><th>Metric</th><th>Resource</th><th>Diagnostics</th><th>Dimensions</th><th>작업</th></tr></thead>
-        <tbody>{{range .Definitions}}
-          <tr>
-            <td class="status">{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
-            <td>{{.ServiceName}}<br><span class="muted">{{.Namespace}}</span></td>
-            <td>{{.MetricName}}<br><span class="muted">{{.Statistic}} / {{.PeriodSeconds}}s / {{.Unit}}</span></td>
-            <td>{{.ResourceID}}<br><span class="muted">{{.Region}}</span></td>
-            <td>
-              <span class="status">{{.LastRunStatus}}</span><br>
-              <span class="muted">fetched {{.FetchedPointCount}} / inserted {{.InsertedPointCount}} / recent {{.RecentPointCount}}</span><br>
-              <span class="muted">latest {{.LatestPointAt}}</span><br>
-              {{if .SanitizedError}}<span class="warning">{{.SanitizedError}}</span>{{end}}
-            </td>
-            <td><code>{{.DimensionsJSON}}</code></td>
-            <td>
-              {{if .Enabled}}
-              <form method="post" action="/admin/metric-definitions/{{.ID}}/disable?region={{$.Region}}" class="inline"><button class="secondary">Disable</button></form>
-              {{else}}
-              <form method="post" action="/admin/metric-definitions/{{.ID}}/enable?region={{$.Region}}" class="inline"><button>Enable</button></form>
-              {{end}}
-              <form method="post" action="/admin/metric-definitions/{{.ID}}/delete?region={{$.Region}}" class="inline"><button class="secondary">삭제</button></form>
-            </td>
-          </tr>
-        {{else}}<tr><td colspan="7" class="muted">등록된 metric definition이 없습니다.</td></tr>{{end}}</tbody>
-      </table>
-      <details>
-        <summary>Advanced public metric metadata</summary>
-        <p class="muted">Public portfolio는 나중에 별도 UX로 개편합니다. 임시 공개 테스트가 필요할 때만 사용합니다.</p>
+        </div>
         <table>
-          <thead><tr><th>Metric</th><th>Public metadata</th></tr></thead>
+          <thead><tr><th>상태</th><th>서비스</th><th>Metric</th><th>Resource</th><th>Diagnostics</th><th>Dimensions</th><th>작업</th></tr></thead>
           <tbody>{{range .Definitions}}
             <tr>
-              <td>{{.MetricName}}<br><span class="muted">{{.ServiceName}} / {{.ResourceID}}</span></td>
+              <td class="status">{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
+              <td>{{.ServiceName}}<br><span class="muted">{{.Namespace}}</span></td>
+              <td>{{.MetricName}}<br><span class="muted">{{.Statistic}} / {{.PeriodSeconds}}s / {{.Unit}}</span></td>
+              <td>{{.ResourceID}}<br><span class="muted">{{.Region}}</span></td>
               <td>
-                <form method="post" action="/admin/metric-definitions/{{.ID}}/public?region={{$.Region}}" class="inline">
-                  <label><input type="checkbox" name="public_enabled" {{if .PublicEnabled}}checked{{end}}> public</label>
-                  <input name="public_label" value="{{.PublicLabel}}" placeholder="label">
-                  <button class="secondary">저장</button>
-                </form>
+                <span class="status">{{.LastRunStatus}}</span><br>
+                <span class="muted">fetched {{.FetchedPointCount}} / inserted {{.InsertedPointCount}} / recent {{.RecentPointCount}}</span><br>
+                <span class="muted">latest {{.LatestPointAt}}</span><br>
+                {{if .SanitizedError}}<span class="warning">{{.SanitizedError}}</span>{{end}}
+              </td>
+              <td><code>{{.DimensionsJSON}}</code></td>
+              <td>
+                {{if .Enabled}}
+                <form method="post" action="/admin/metric-definitions/{{.ID}}/disable?region={{$.Region}}" class="inline"><button class="secondary">Disable</button></form>
+                {{else}}
+                <form method="post" action="/admin/metric-definitions/{{.ID}}/enable?region={{$.Region}}" class="inline"><button>Enable</button></form>
+                {{end}}
+                <form method="post" action="/admin/metric-definitions/{{.ID}}/delete?region={{$.Region}}" class="inline"><button class="secondary">삭제</button></form>
               </td>
             </tr>
-          {{else}}<tr><td colspan="2" class="muted">등록된 metric definition이 없습니다.</td></tr>{{end}}</tbody>
+          {{else}}<tr><td colspan="7" class="muted">등록된 metric definition이 없습니다.</td></tr>{{end}}</tbody>
         </table>
       </details>
       <details>
