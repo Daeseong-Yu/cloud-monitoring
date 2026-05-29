@@ -28,8 +28,9 @@ grep -q 'ON CONFLICT ON CONSTRAINT metric_daily_summary_unique DO UPDATE' cmd/su
 grep -q 'pg_database_size' scripts/verify-db-health.sh
 grep -q 'pg_total_relation_size' scripts/verify-db-health.sh
 grep -q 'gitleaks/gitleaks-action' .github/workflows/ci.yml
-grep -q 'go test ./...' .github/workflows/ci.yml
-grep -q 'validate-step12.sh' .github/workflows/ci.yml
+grep -q 'scripts/validate-ci.sh' .github/workflows/ci.yml
+grep -q 'test ./...' scripts/validate-common.sh
+grep -q 'validate-common.sh' scripts/validate-ci.sh
 grep -q 'go build -o /out/alert-runner' Dockerfile
 grep -q 'go build -o /out/summary-rollup' Dockerfile
 
