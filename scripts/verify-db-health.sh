@@ -1,13 +1,22 @@
 #!/bin/sh
 set -eu
 
+env_file="${DEPLOY_ENV_FILE:-/etc/cloud-monitor/cloud-monitor.env}"
+
 if ! command -v psql >/dev/null 2>&1; then
   echo "psql command not found" >&2
   exit 1
 fi
 
+if [ -z "${DATABASE_URL:-}" ] && [ -r "$env_file" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$env_file"
+  set +a
+fi
+
 if [ -z "${DATABASE_URL:-}" ]; then
-  echo "DATABASE_URL is required" >&2
+  echo "DATABASE_URL is required; set it or load $env_file" >&2
   exit 2
 fi
 
