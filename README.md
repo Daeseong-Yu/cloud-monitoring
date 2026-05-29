@@ -16,13 +16,14 @@ Grafana는 CloudWatch를 직접 조회하지 않습니다. CloudWatch API 호출
 ## 구현 범위
 
 - AWS CloudWatch metric discovery
-- EC2, Lambda, CWAgent metric 후보 탐색
-- Admin UI를 통한 resource discovery 실행과 metric definition 관리
-- 서비스별 추천 metric set 일괄 적용
+- EC2, Lambda, API Gateway, Amplify, SES, S3 resource discovery
+- Admin UI를 통한 resource discovery 실행과 서비스/리소스 모니터링 여부 관리
+- Product metric catalog 기반 기본 metric 자동 적용
 - Go collector의 주기적 CloudWatch `GetMetricData` 수집
 - PostgreSQL metric 저장소
 - Grafana PostgreSQL datasource provisioning
-- Grafana dashboard provisioning
+- 관리자용 Grafana dashboard provisioning과 편집
+- 공개용 Grafana Public Dashboard 기준
 - Alert runner, summary rollup, retention one-shot job
 - PostgreSQL backup, migration, health validation script
 - Docker Compose 기반 운영 runtime
@@ -35,8 +36,10 @@ Grafana는 CloudWatch를 직접 조회하지 않습니다. CloudWatch API 호출
 - Grafana CloudWatch datasource와 CloudWatch Logs panel은 사용하지 않습니다.
 - AWS credential은 direct environment key가 아니라 shared profile 파일로 전달합니다.
 - Admin UI는 운영자 전용이며 public internet에 직접 노출하지 않습니다.
-- Grafana dashboard는 내부 운영/분석 surface이며 public portfolio surface로 사용하지 않습니다.
-- 외부 공개 영역은 public metadata로 opt-in된 제품 API/UI surface에서만 제공합니다.
+- Grafana dashboard가 관리자/공개 조회 surface입니다.
+- 관리자 Grafana는 로그인 후 dashboard 편집을 허용하고, 공개 Grafana dashboard는 read-only로만 노출합니다.
+- 공개 dashboard는 public metadata로 opt-in된 리소스만 표시하며 raw resource id, account id, full ARN, raw tags, raw collector error를 노출하지 않는 public-safe view만 조회합니다.
+- Admin UI는 개별 metric 선택 화면이 아니라 서비스/리소스의 모니터링 여부와 공개 여부를 관리합니다.
 - AWS IAM 권한은 read-only 조회 권한만 사용합니다.
 - 실제 secret, account id, full ARN, resource id는 repository에 commit하지 않습니다.
 
@@ -48,10 +51,10 @@ Docker Compose 서비스:
 | --- | --- |
 | `postgres` | metric, resource, alert, summary 저장소 |
 | `grafana` | PostgreSQL datasource 기반 dashboard |
-| `admin-ui` | resource discovery, metric definition 관리 |
-| `collector` | enabled metric definition을 CloudWatch에서 수집 |
+| `admin-ui` | resource discovery, 서비스/리소스 모니터링 여부와 공개 metadata 관리 |
+| `collector` | enabled 기본 metric definition을 CloudWatch에서 수집 |
 | `schema` | DB migration one-shot |
-| `resource-discovery` | CloudWatch metric 후보와 tag 기반 resource discovery |
+| `resource-discovery` | CloudWatch metric과 tag 기반 resource discovery |
 | `alert-runner` | alert rule 평가 one-shot |
 | `summary-rollup` | hourly/daily summary 생성 one-shot |
 | `retention-job` | raw metric retention 적용 one-shot |
@@ -61,11 +64,12 @@ Docker Compose 서비스:
 1. PostgreSQL, Grafana, Admin UI를 기동합니다.
 2. Schema migration을 적용합니다.
 3. Admin UI에서 `Discovery 실행`을 누릅니다.
-4. 서비스 표의 resource 수와 Bulk preview를 확인합니다.
-5. `추천 세트 일괄 적용`으로 서비스별 recommended metric을 먼저 적용합니다.
-6. 추가 지표가 필요할 때만 advanced candidate bulk action 또는 개별 후보 선택을 사용합니다.
+4. 서비스/리소스 목록에서 모니터링할 대상을 선택합니다.
+5. 선택된 리소스에는 product metric catalog의 기본 metric이 자동 적용됩니다.
+6. 공개 dashboard에 표시할 리소스만 public metadata로 별도 opt-in합니다.
 7. Collector를 실행해 CloudWatch metric을 PostgreSQL에 저장합니다.
-8. 내부 Grafana dashboard에서 PostgreSQL에 저장된 metric을 조회합니다.
+8. 관리자 Grafana dashboard에서 PostgreSQL에 저장된 metric을 조회하고 필요하면 dashboard를 편집합니다.
+9. 공개용 Grafana Public Dashboard는 public-safe view를 통해 opt-in된 데이터만 read-only로 표시합니다.
 
 ## 빠른 설치 흐름
 
@@ -114,9 +118,15 @@ docker compose exec postgres psql -U "${POSTGRES_USER:-cloud_monitor}" \
   -c "select count(*) from metric_definitions where enabled = true; select count(*) from metric_points;"
 ```
 
-## Internal Dashboard
+## Grafana Dashboards
 
-Grafana dashboard는 내부 운영/분석용입니다. 실제 resource id나 운영 진단 정보가 보일 수 있으므로 외부 portfolio 공개 surface로 사용하지 않습니다.
+Grafana dashboard는 관리자용과 공개용으로 나눕니다.
+
+- 관리자용 dashboard는 내부망, VPN, 또는 IP allowlist 뒤에서 운영하며 실제 resource id와 운영 진단 정보를 볼 수 있습니다.
+- 관리자 로그인에서는 dashboard 편집을 허용합니다. 편집 저장본은 Grafana DB에 남깁니다.
+- 공개용 dashboard는 Grafana Public Dashboard 또는 externally shared dashboard로 read-only 노출합니다.
+- 공개용 dashboard는 Grafana shared dashboard 제약에 맞춰 variable 없이 구성하고, public-safe SQL view만 조회합니다.
+- 실제 공개 URL, 공유 token, 서버 IP, domain, credential은 tracked file에 기록하지 않습니다.
 
 Provisioning 대상:
 
@@ -132,22 +142,18 @@ Provisioning 대상:
 
 Grafana는 `cloud-monitor-postgres` datasource만 사용합니다.
 
-## Public Portfolio API
+## Public Grafana Dashboard
 
-Public Portfolio 화면과 API는 read-only이며 Admin API와 별도 경로에서 제공합니다. 응답은 `public_enabled=true`로 명시한 resource와 metric definition만 포함하고, public alias와 public label 중심의 데이터만 반환합니다.
+외부 공개 surface는 별도 제품 frontend/API가 아니라 Grafana Public Dashboard입니다. 공개 dashboard는 `public_enabled=true`로 명시한 리소스의 기본 metric만 표시하고, public label 중심으로 series를 구성합니다.
 
-- `GET /public/overview`
-- `GET /api/public/metrics`
-- `GET /api/public/metrics/{id}/series`
-
-Public API 응답에는 raw resource id, AWS account id, full ARN, raw tags, credential, raw collector error를 포함하지 않습니다.
+공개 dashboard SQL/view에는 raw resource id, AWS account id, full ARN, raw tags, credential, raw collector error를 포함하지 않습니다.
 
 공개 전 확인:
 
 - 공개 URL, domain, 서버 IP, credential은 tracked file에 기록하지 않습니다.
-- Admin UI는 내부망, VPN, 또는 IP allowlist 뒤에 두고 `/public/overview`만 외부 노출 대상으로 검토합니다.
-- 현재 public metadata 편집은 Admin UI의 advanced 섹션에 둔 임시 테스트용 기능입니다. 대량 공개 UX는 추후 별도 설계로 개편합니다.
-- 공개 화면은 public API만 호출하며 Grafana public dashboard를 portfolio surface로 사용하지 않습니다.
+- Admin UI와 Grafana 관리자/edit access는 내부망, VPN, 또는 IP allowlist 뒤에 둡니다.
+- Public Dashboard 공유 링크만 외부 노출 대상으로 검토합니다.
+- 공개 여부는 모니터링 여부와 별개이며, public metadata로 명시적으로 opt-in된 리소스만 공개합니다.
 - 배포 전 `sh scripts/validate-productization.sh`와 `RUN_GITLEAKS=1 sh scripts/scan-secrets.sh`를 실행합니다.
 
 ## AWS 권한
