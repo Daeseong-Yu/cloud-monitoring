@@ -1,4 +1,5 @@
-name: ci
+name: Cloud Monitor CI
+run-name: CI • ${{ github.event_name }} • ${{ github.ref_name }} • @${{ github.actor }}
 
 on:
   push:
@@ -6,6 +7,7 @@ on:
 
 jobs:
   test:
+    name: Validate code and release config
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

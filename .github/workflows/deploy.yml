@@ -1,4 +1,5 @@
-name: deploy
+name: Cloud Monitor Deploy
+run-name: Deploy production • ${{ inputs.ref }} • @${{ github.actor }}
 
 on:
   workflow_dispatch:
@@ -18,6 +19,7 @@ concurrency:
 
 jobs:
   deploy:
+    name: Deploy to production server
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
