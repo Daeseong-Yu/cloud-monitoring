@@ -166,6 +166,23 @@ Grafana는 `cloud-monitor-postgres` datasource만 사용합니다.
 - 공개 여부는 모니터링 여부와 별개이며, public metadata로 명시적으로 opt-in된 리소스만 공개합니다.
 - 배포 전 `sh scripts/validate-step27.sh`, `sh scripts/validate-productization.sh`, `RUN_GITLEAKS=1 sh scripts/scan-secrets.sh`를 실행합니다.
 
+운영 배포 후 공개 dashboard runtime 확인:
+
+```bash
+set -a
+. /etc/cloud-monitor/cloud-monitor.env
+set +a
+
+sh scripts/verify-grafana-public-dashboard.sh
+```
+
+Grafana에서 공유 링크를 만든 뒤에는 실제 URL을 환경 변수로만 넘겨 확인합니다. URL 값은 repository에 기록하지 않습니다.
+
+```bash
+GRAFANA_PUBLIC_DASHBOARD_URL="REPLACE_WITH_PUBLIC_DASHBOARD_URL" \
+  sh scripts/verify-grafana-public-dashboard.sh
+```
+
 ## AWS 권한
 
 Collector와 discovery에는 read-only 권한만 필요합니다.

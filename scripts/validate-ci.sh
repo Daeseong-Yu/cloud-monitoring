@@ -6,9 +6,11 @@ test -f .github/workflows/deploy.yml
 test -f docker-compose.yml
 test -f scripts/deploy-production.sh
 test -f scripts/rollback-production.sh
+test -f scripts/verify-grafana-public-dashboard.sh
 
 sh -n scripts/deploy-production.sh
 sh -n scripts/rollback-production.sh
+sh -n scripts/verify-grafana-public-dashboard.sh
 
 grep -q 'workflow_dispatch' .github/workflows/deploy.yml
 grep -Fq 'workflow_run:' .github/workflows/deploy.yml
