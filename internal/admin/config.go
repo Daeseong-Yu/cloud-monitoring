@@ -40,13 +40,13 @@ func LoadMetricSets(r io.Reader) ([]MetricSet, error) {
 	return file.MetricSets, nil
 }
 
-func LoadMetricSetsFromProductCatalog(r io.Reader) ([]MetricSet, error) {
+func LoadDefaultMetricSetsFromProductCatalog(r io.Reader) ([]MetricSet, error) {
 	catalog, err := productcatalog.Load(r)
 	if err != nil {
 		return nil, err
 	}
 
-	productSets := catalog.RecommendedMetricSets()
+	productSets := catalog.DefaultMetricSets()
 	sets := make([]MetricSet, 0, len(productSets))
 	for _, productSet := range productSets {
 		metrics := make([]store.RecommendedMetric, 0, len(productSet.Metrics))
@@ -66,4 +66,8 @@ func LoadMetricSetsFromProductCatalog(r io.Reader) ([]MetricSet, error) {
 		})
 	}
 	return sets, nil
+}
+
+func LoadMetricSetsFromProductCatalog(r io.Reader) ([]MetricSet, error) {
+	return LoadDefaultMetricSetsFromProductCatalog(r)
 }

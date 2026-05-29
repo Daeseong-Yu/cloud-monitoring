@@ -34,19 +34,22 @@ type Axis struct {
 	Max *float64 `json:"max,omitempty"`
 }
 
-type RecommendedMetricSet struct {
-	ServiceName string              `json:"serviceName"`
-	Namespace   string              `json:"namespace"`
-	Name        string              `json:"name"`
-	Metrics     []RecommendedMetric `json:"metrics"`
+type DefaultMetricSet struct {
+	ServiceName string          `json:"serviceName"`
+	Namespace   string          `json:"namespace"`
+	Name        string          `json:"name"`
+	Metrics     []DefaultMetric `json:"metrics"`
 }
 
-type RecommendedMetric struct {
+type DefaultMetric struct {
 	MetricName    string `json:"metricName"`
 	Statistic     string `json:"statistic"`
 	PeriodSeconds int    `json:"periodSeconds"`
 	Unit          string `json:"unit,omitempty"`
 }
+
+type RecommendedMetricSet = DefaultMetricSet
+type RecommendedMetric = DefaultMetric
 
 var validStatistics = map[string]struct{}{
 	"Average":     {},
@@ -117,13 +120,13 @@ func (c Catalog) Validate() error {
 	return nil
 }
 
-func (c Catalog) RecommendedMetricSets() []RecommendedMetricSet {
+func (c Catalog) DefaultMetricSets() []DefaultMetricSet {
 	type groupKey struct {
 		serviceName string
 		namespace   string
 	}
 
-	groups := map[groupKey][]RecommendedMetric{}
+	groups := map[groupKey][]DefaultMetric{}
 	for _, metric := range c.Metrics {
 		if !metric.Recommended {
 			continue
@@ -132,7 +135,7 @@ func (c Catalog) RecommendedMetricSets() []RecommendedMetricSet {
 			serviceName: strings.TrimSpace(metric.ServiceName),
 			namespace:   strings.TrimSpace(metric.Namespace),
 		}
-		groups[key] = append(groups[key], RecommendedMetric{
+		groups[key] = append(groups[key], DefaultMetric{
 			MetricName:    strings.TrimSpace(metric.MetricName),
 			Statistic:     strings.TrimSpace(metric.Statistic),
 			PeriodSeconds: metric.PeriodSeconds,
@@ -151,13 +154,13 @@ func (c Catalog) RecommendedMetricSets() []RecommendedMetricSet {
 		return keys[i].serviceName < keys[j].serviceName
 	})
 
-	sets := make([]RecommendedMetricSet, 0, len(keys))
+	sets := make([]DefaultMetricSet, 0, len(keys))
 	for _, key := range keys {
 		metrics := groups[key]
 		sort.Slice(metrics, func(i, j int) bool {
-			return recommendedMetricKey(metrics[i]) < recommendedMetricKey(metrics[j])
+			return defaultMetricKey(metrics[i]) < defaultMetricKey(metrics[j])
 		})
-		sets = append(sets, RecommendedMetricSet{
+		sets = append(sets, DefaultMetricSet{
 			ServiceName: key.serviceName,
 			Namespace:   key.namespace,
 			Name:        key.serviceName + "-default",
@@ -166,6 +169,10 @@ func (c Catalog) RecommendedMetricSets() []RecommendedMetricSet {
 	}
 
 	return sets
+}
+
+func (c Catalog) RecommendedMetricSets() []RecommendedMetricSet {
+	return c.DefaultMetricSets()
 }
 
 func validateEntry(metric Entry) error {
@@ -259,7 +266,7 @@ func definitionKey(metric Entry) string {
 	}, "\x00")
 }
 
-func recommendedMetricKey(metric RecommendedMetric) string {
+func defaultMetricKey(metric DefaultMetric) string {
 	return strings.Join([]string{
 		metric.MetricName,
 		metric.Statistic,

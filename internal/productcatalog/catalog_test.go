@@ -24,25 +24,25 @@ func TestLoadProductMetricCatalog(t *testing.T) {
 	}
 }
 
-func TestRecommendedMetricSetsPreserveExistingEC2AndLambdaMetrics(t *testing.T) {
+func TestDefaultMetricSetsPreserveExistingEC2AndLambdaMetrics(t *testing.T) {
 	catalog, err := LoadFile("../../configs/product-metric-catalog.json")
 	if err != nil {
 		t.Fatalf("load product metric catalog: %v", err)
 	}
 
-	sets := catalog.RecommendedMetricSets()
-	byName := map[string]RecommendedMetricSet{}
+	sets := catalog.DefaultMetricSets()
+	byName := map[string]DefaultMetricSet{}
 	for _, set := range sets {
 		byName[set.Name] = set
 	}
 
-	assertRecommendedNames(t, byName["ec2-default"], []string{
+	assertDefaultNames(t, byName["ec2-default"], []string{
 		"CPUUtilization",
 		"NetworkIn",
 		"NetworkOut",
 		"StatusCheckFailed",
 	})
-	assertRecommendedNames(t, byName["lambda-default"], []string{
+	assertDefaultNames(t, byName["lambda-default"], []string{
 		"Duration",
 		"Errors",
 		"Invocations",
@@ -183,7 +183,7 @@ func TestCatalogFileDoesNotContainRuntimeIdentifiers(t *testing.T) {
 	}
 }
 
-func assertRecommendedNames(t *testing.T, set RecommendedMetricSet, want []string) {
+func assertDefaultNames(t *testing.T, set DefaultMetricSet, want []string) {
 	t.Helper()
 	if len(set.Metrics) != len(want) {
 		t.Fatalf("%s metric count = %d, want %d", set.Name, len(set.Metrics), len(want))

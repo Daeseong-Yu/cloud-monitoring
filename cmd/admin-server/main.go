@@ -54,7 +54,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer metricSetsFile.Close()
-	metricSets, err := admin.LoadMetricSetsFromProductCatalog(metricSetsFile)
+	metricSets, err := admin.LoadDefaultMetricSetsFromProductCatalog(metricSetsFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "admin product metric catalog error: %v\n", err)
 		os.Exit(1)

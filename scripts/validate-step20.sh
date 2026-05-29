@@ -66,10 +66,10 @@ jq -e '
   and all(.metrics[] | select(.serviceName == "s3" and (.metricName == "BucketSizeBytes" or .metricName == "NumberOfObjects")); ((.requiredDimensions | index("BucketName") != null) and (.requiredDimensions | index("StorageType") != null)))
 ' "$catalog" >/dev/null
 
-catalog_ec2_lambda="$(mktemp)"
-recommended_ec2_lambda="$(mktemp)"
+catalog_default_ec2_lambda="$(mktemp)"
+legacy_recommended_ec2_lambda="$(mktemp)"
 cleanup() {
-  rm -f "$catalog_ec2_lambda" "$recommended_ec2_lambda"
+  rm -f "$catalog_default_ec2_lambda" "$legacy_recommended_ec2_lambda"
 }
 trap cleanup EXIT
 
@@ -78,7 +78,7 @@ jq -r '
   | select(.recommended == true and (.serviceName == "ec2" or .serviceName == "lambda"))
   | [.serviceName, .namespace, .metricName, .statistic, (.periodSeconds | tostring), .unit]
   | @tsv
-' "$catalog" | sort >"$catalog_ec2_lambda"
+' "$catalog" | sort >"$catalog_default_ec2_lambda"
 
 jq -r '
   .metricSets[]
@@ -87,16 +87,18 @@ jq -r '
   | .metrics[]
   | [$set.serviceName, $set.namespace, .metricName, .statistic, (.periodSeconds | tostring), .unit]
   | @tsv
-' "$recommended" | sort >"$recommended_ec2_lambda"
+' "$recommended" | sort >"$legacy_recommended_ec2_lambda"
 
-if ! cmp -s "$catalog_ec2_lambda" "$recommended_ec2_lambda"; then
-  echo "EC2/Lambda recommended metric compatibility drifted between product catalog and recommended metric sets." >&2
-  diff -u "$recommended_ec2_lambda" "$catalog_ec2_lambda" >&2 || true
+if ! cmp -s "$catalog_default_ec2_lambda" "$legacy_recommended_ec2_lambda"; then
+  echo "EC2/Lambda default metric compatibility drifted between product catalog and legacy recommended metric sets." >&2
+  diff -u "$legacy_recommended_ec2_lambda" "$catalog_default_ec2_lambda" >&2 || true
   exit 1
 fi
 
-grep -q 'LoadMetricSetsFromProductCatalog' internal/admin/config.go
+grep -q 'DefaultMetricSets' internal/productcatalog/catalog.go
+grep -q 'LoadDefaultMetricSetsFromProductCatalog' internal/admin/config.go
 grep -q 'configs/product-metric-catalog.json' cmd/admin-server/main.go
+grep -q '기본 metric' .ai/phases/cloud-monitor-productization/step20.md
 
 GOCACHE="${GOCACHE:-$(pwd)/.cache/go-build}" go test ./internal/productcatalog ./internal/admin
 
