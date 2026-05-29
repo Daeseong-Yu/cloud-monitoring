@@ -179,7 +179,9 @@ flowchart TB
 운영 노출 기준:
 
 - Grafana는 HTTPS reverse proxy 뒤에 둡니다.
-- Grafana public dashboard는 read-only로 제한합니다.
+- Grafana Public Dashboard는 read-only로 제한합니다.
+- Grafana Public Dashboard는 `public_grafana_metric_points`, `public_grafana_metric_summary` 같은 public-safe view만 조회합니다.
+- Grafana Public Dashboard 공유 링크는 운영 환경에서 생성하고, URL이나 token 값은 repository에 기록하지 않습니다.
 - Admin UI는 VPN, 내부망, 또는 IP allowlist 뒤에 둡니다.
 - Admin UI는 public unauthenticated service로 노출하지 않습니다.
 - PostgreSQL은 public internet에 노출하지 않습니다.
@@ -252,4 +254,3 @@ Discovery endpoint가 성공해도 Admin UI table이 자동 갱신되지 않을 
 ### Collector running but no data
 
 Collector가 실행 중이어도 `metric_definitions.enabled = true` 항목이 없으면 수집할 대상이 없습니다. Admin UI에서 추천 metric set을 적용한 뒤 one-shot collector로 검증합니다.
-

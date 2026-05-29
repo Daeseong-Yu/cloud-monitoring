@@ -473,9 +473,19 @@ deploy/nginx/cloud-monitor.conf.example
 운영 기준:
 
 - Grafana는 HTTPS reverse proxy 뒤에서 노출합니다.
-- Grafana public dashboard는 read-only로 제한합니다.
+- Grafana Public Dashboard는 read-only로 제한합니다.
+- Grafana Public Dashboard 공유 링크는 Grafana 운영 화면에서 생성하고, URL이나 token 값은 repository에 기록하지 않습니다.
+- 공개 dashboard는 `public_grafana_metric_points`, `public_grafana_metric_summary` 같은 public-safe view만 조회합니다.
 - Admin UI는 public internet에 직접 노출하지 않습니다.
 - Admin UI는 VPN, 내부망, 또는 고정 IP allowlist 뒤에 둡니다.
+
+공개 전 acceptance validation:
+
+```bash
+sh scripts/validate-step27.sh
+sh scripts/validate-productization.sh
+RUN_GITLEAKS=1 sh scripts/scan-secrets.sh
+```
 
 ## 16. Troubleshooting
 

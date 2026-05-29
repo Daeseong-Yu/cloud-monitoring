@@ -158,7 +158,7 @@ Grafana는 `cloud-monitor-postgres` datasource만 사용합니다.
 - Admin UI와 Grafana 관리자/edit access는 내부망, VPN, 또는 IP allowlist 뒤에 둡니다.
 - Public Dashboard 공유 링크만 외부 노출 대상으로 검토합니다.
 - 공개 여부는 모니터링 여부와 별개이며, public metadata로 명시적으로 opt-in된 리소스만 공개합니다.
-- 배포 전 `sh scripts/validate-productization.sh`와 `RUN_GITLEAKS=1 sh scripts/scan-secrets.sh`를 실행합니다.
+- 배포 전 `sh scripts/validate-step27.sh`, `sh scripts/validate-productization.sh`, `RUN_GITLEAKS=1 sh scripts/scan-secrets.sh`를 실행합니다.
 
 ## AWS 권한
 
