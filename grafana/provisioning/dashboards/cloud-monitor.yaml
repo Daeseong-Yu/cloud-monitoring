@@ -6,7 +6,7 @@ providers:
     folder: Cloud Monitor
     type: file
     disableDeletion: false
-    allowUiUpdates: false
+    allowUiUpdates: true
     updateIntervalSeconds: 600
     options:
       path: /var/lib/grafana/dashboards/cloud-monitor

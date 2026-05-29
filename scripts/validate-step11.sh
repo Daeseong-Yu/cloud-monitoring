@@ -8,7 +8,8 @@ test -f grafana/dashboards/cloud-monitor-postgres-ops.json
 test -f configs/recommended-metric-sets.json
 
 for dashboard in grafana/dashboards/*.json; do
-  jq -e '.editable == false' "$dashboard" >/dev/null
+  jq -e '.editable == true' "$dashboard" >/dev/null
+  jq -e '(.tags // []) | index("admin") and index("internal")' "$dashboard" >/dev/null
   jq -e '.refresh | test("^[0-9]+m$")' "$dashboard" >/dev/null
   jq -e '(.refresh | sub("m$"; "") | tonumber) >= 10' "$dashboard" >/dev/null
   jq -e 'all(.panels[]; .datasource.type == "postgres" and .datasource.uid == "cloud-monitor-postgres")' "$dashboard" >/dev/null

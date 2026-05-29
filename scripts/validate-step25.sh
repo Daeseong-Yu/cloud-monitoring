@@ -22,11 +22,12 @@ const dashboardFiles = fs.readdirSync('grafana/dashboards')
 const failures = [];
 for (const file of dashboardFiles) {
   const dashboard = JSON.parse(fs.readFileSync(file, 'utf8'));
-  if (dashboard.editable !== false) {
-    failures.push(`${file}: editable must be false`);
+  const tags = Array.isArray(dashboard.tags) ? dashboard.tags : [];
+  if (dashboard.editable !== true) {
+    failures.push(`${file}: admin dashboard must be editable`);
   }
-  if (!Array.isArray(dashboard.tags) || !dashboard.tags.includes('internal')) {
-    failures.push(`${file}: dashboard must carry internal tag`);
+  if (!tags.includes('admin') || !tags.includes('internal')) {
+    failures.push(`${file}: admin dashboard must carry admin and internal tags`);
   }
   if (!refreshAtLeastTenMinutes(dashboard.refresh || '')) {
     failures.push(`${file}: refresh must be at least 10m`);
@@ -40,6 +41,7 @@ for (const file of dashboardFiles) {
       if (/cloudwatch|logs/i.test(sql)) {
         failures.push(`${file}: panel ${panel.title || panel.id} references CloudWatch or Logs`);
       }
+      validateResourceSeries(file, panel, sql, failures);
       validateCatalogMetrics(file, panel, sql, failures);
     }
   }
@@ -49,6 +51,23 @@ for (const file of dashboardFiles) {
     const query = variable.query || variable.definition || '';
     if (/cloudwatch|logs/i.test(query)) {
       failures.push(`${file}: variable ${variable.name} references CloudWatch or Logs`);
+    }
+    if (/FROM metric_definitions WHERE md\./.test(query)) {
+      failures.push(`${file}: variable ${variable.name} references md alias without declaring it`);
+    }
+    if (variable.name && variable.name.includes('resource_id')) {
+      if (variable.multi !== true || variable.includeAll !== true) {
+        failures.push(`${file}: variable ${variable.name} must allow multi/all resource selection`);
+      }
+      if (!/JOIN resources r/.test(query)) {
+        failures.push(`${file}: variable ${variable.name} should display resource labels from resources`);
+      }
+      if (!/md\.enabled = TRUE/.test(query)) {
+        failures.push(`${file}: variable ${variable.name} should only list enabled metric definitions`);
+      }
+    }
+    if (/\$\{[^}]*resource_id:sqlstring\}/.test(query) && /resource_id\s*=\s*\$\{[^}]*resource_id:sqlstring\}/.test(query)) {
+      failures.push(`${file}: variable ${variable.name} must support multi resource selection`);
     }
   }
 }
@@ -77,6 +96,25 @@ function validateDatasource(file, datasource, failures) {
   }
 }
 
+function validateResourceSeries(file, panel, sql, failures) {
+  if (!sql.includes('metric_points') || !sql.includes('mp.timestamp AS "time"')) return;
+  if (/md\.resource_id\s*=\s*\$\{[^}]*resource_id:sqlstring\}/.test(sql)) {
+    failures.push(`${file}: panel ${panel.title || panel.id} must not force a single resource_id`);
+  }
+  if (/\$\{[^}]*resource_id:sqlstring\}/.test(sql) && !/md\.resource_id\s+IN\s+\(\$\{[^}]*resource_id:sqlstring\}\)/.test(sql)) {
+    failures.push(`${file}: panel ${panel.title || panel.id} must support multi resource selection`);
+  }
+  if (/\$\{[^}]*resource_id:sqlstring\}/.test(sql) && !/JOIN resources r/.test(sql)) {
+    failures.push(`${file}: panel ${panel.title || panel.id} should join resources for display labels`);
+  }
+  if (/\$\{[^}]*resource_id:sqlstring\}/.test(sql) && !/COALESCE\(NULLIF\(r\.display_name, ''\), md\.resource_id\) AS metric/.test(sql)) {
+    failures.push(`${file}: panel ${panel.title || panel.id} should emit one series per resource label`);
+  }
+  if (!/md\.enabled = TRUE/.test(sql)) {
+    failures.push(`${file}: panel ${panel.title || panel.id} should query enabled metric definitions only`);
+  }
+}
+
 function validateCatalogMetrics(file, panel, sql, failures) {
   const namespaces = [...sql.matchAll(/md\.namespace\s*=\s*'([^']+)'/g)].map((match) => match[1]);
   const metricNames = [...sql.matchAll(/md\.metric_name\s*=\s*'([^']+)'/g)].map((match) => match[1]);
@@ -96,7 +134,7 @@ function validateCatalogMetrics(file, panel, sql, failures) {
 }
 NODE
 
-grep -q 'allowUiUpdates: false' grafana/provisioning/dashboards/cloud-monitor.yaml
+grep -q 'allowUiUpdates: true' grafana/provisioning/dashboards/cloud-monitor.yaml
 grep -q 'updateIntervalSeconds: 600' grafana/provisioning/dashboards/cloud-monitor.yaml
 grep -q 'uid: cloud-monitor-postgres' grafana/provisioning/datasources/postgres.yaml
 grep -q 'type: postgres' grafana/provisioning/datasources/postgres.yaml
@@ -106,12 +144,18 @@ if grep -RInE 'type: cloudwatch|uid:.*cloudwatch|CloudWatch Logs|logs panel' gra
   exit 1
 fi
 
-grep -q 'Grafana dashboard는 내부 운영/분석 surface' README.md
-grep -q 'public portfolio surface로 사용하지 않습니다' README.md
-grep -q '제품 API/UI surface' README.md
+grep -q 'Grafana dashboard가 관리자/공개 조회 surface' README.md
+grep -q '관리자 Grafana는 로그인 후 dashboard 편집을 허용' README.md
+grep -q 'Grafana Public Dashboard' README.md
+grep -q 'public-safe view' README.md
 
-if grep -q '공개 가능한 영역은 Grafana read-only dashboard' README.md; then
-  echo "Outdated Grafana public dashboard wording remains." >&2
+if grep -q 'public portfolio surface로 사용하지 않습니다' README.md; then
+  echo "Outdated Grafana-not-public wording remains." >&2
+  exit 1
+fi
+
+if grep -q '제품 API/UI surface' README.md; then
+  echo "Outdated product API/UI public surface wording remains." >&2
   exit 1
 fi
 

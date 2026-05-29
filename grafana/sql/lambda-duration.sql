@@ -1,14 +1,19 @@
 SELECT
     mp.timestamp AS "time",
     mp.value AS value,
-    md.metric_name AS metric
+    COALESCE(NULLIF(r.display_name, ''), md.resource_id) AS metric
 FROM metric_points mp
 JOIN metric_definitions md
     ON md.id = mp.metric_definition_id
+JOIN resources r
+    ON r.service_name = md.service_name
+    AND r.resource_id = md.resource_id
+    AND r.region = md.region
 WHERE
-    md.namespace = 'AWS/Lambda'
+    md.enabled = TRUE
+    AND md.namespace = 'AWS/Lambda'
     AND md.metric_name = 'Duration'
-    AND md.resource_id = ${resource_id:sqlstring}
+    AND md.resource_id IN (${resource_id:sqlstring})
     AND md.region = ${region:sqlstring}
     AND $__timeFilter(mp.timestamp)
 ORDER BY mp.timestamp;

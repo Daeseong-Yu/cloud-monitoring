@@ -33,7 +33,7 @@ jq -e 'all(.panels[].targets[]?; .datasource.uid == "cloud-monitor-postgres" and
 jq -e 'all(.panels[].targets[]?; (.rawSql | contains("metric_points")) and (.rawSql | contains("metric_definitions")))' "$dashboard_file" >/dev/null
 jq -e 'all(.panels[].targets[]?; (.rawSql | contains("$__timeFilter")))' "$dashboard_file" >/dev/null
 jq -e 'all([.panels[].targets[]? | select(.format == "time_series")][];
-  (.rawSql | contains("md.resource_id = ${resource_id:sqlstring}"))
+  (.rawSql | contains("md.resource_id IN (${resource_id:sqlstring})"))
   and (.rawSql | contains("md.region = ${region:sqlstring}"))
 )' "$dashboard_file" >/dev/null
 jq -e '[
@@ -53,7 +53,7 @@ jq -e '[
 grep -q 'type: postgres' "$datasource_file"
 grep -q 'uid: cloud-monitor-postgres' "$datasource_file"
 grep -q '${GRAFANA_POSTGRES_PASSWORD}' "$datasource_file"
-grep -q 'allowUiUpdates: false' "$provider_file"
+grep -q 'allowUiUpdates: true' "$provider_file"
 
 if grep -R -i 'type:[[:space:]]*cloudwatch\|"type":[[:space:]]*"cloudwatch"\|datasource.*cloudwatch' grafana >/dev/null; then
   echo "Grafana 산출물에 CloudWatch datasource 참조가 있습니다." >&2

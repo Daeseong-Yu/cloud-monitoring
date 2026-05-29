@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "editable": false,
+  "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
@@ -130,7 +130,8 @@
   "tags": [
     "cloud-monitor",
     "postgres",
-    "internal"
+    "internal",
+    "admin"
   ],
   "templating": {
     "list": []

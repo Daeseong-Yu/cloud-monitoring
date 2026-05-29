@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "editable": false,
+  "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
   "id": null,
@@ -42,7 +42,7 @@
             "uid": "cloud-monitor-postgres"
           },
           "format": "time_series",
-          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    md.metric_name AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nWHERE\n    md.enabled = TRUE\n    AND md.region = ${region:sqlstring}\n    AND md.namespace = ${namespace:sqlstring}\n    AND md.resource_id = ${resource_id:sqlstring}\n    AND md.metric_name = ${metric_name:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
+          "rawSql": "SELECT\n    mp.timestamp AS \"time\",\n    mp.value AS value,\n    COALESCE(NULLIF(r.display_name, ''), md.resource_id) AS metric\nFROM metric_points mp\nJOIN metric_definitions md\n    ON md.id = mp.metric_definition_id\nJOIN resources r\n    ON r.service_name = md.service_name\n    AND r.resource_id = md.resource_id\n    AND r.region = md.region\nWHERE\n    md.enabled = TRUE\n    AND md.region = ${region:sqlstring}\n    AND md.namespace = ${namespace:sqlstring}\n    AND md.resource_id IN (${resource_id:sqlstring})\n    AND md.metric_name = ${metric_name:sqlstring}\n    AND $__timeFilter(mp.timestamp)\nORDER BY mp.timestamp;",
           "refId": "A"
         }
       ],
@@ -75,7 +75,7 @@
             "uid": "cloud-monitor-postgres"
           },
           "format": "table",
-          "rawSql": "SELECT\n    md.region,\n    md.namespace,\n    md.resource_id,\n    md.metric_name,\n    md.statistic,\n    md.period_seconds,\n    md.enabled,\n    count(mp.id) AS points,\n    max(mp.timestamp) AS latest_point\nFROM metric_definitions md\nLEFT JOIN metric_points mp\n    ON mp.metric_definition_id = md.id\n    AND $__timeFilter(mp.timestamp)\nWHERE\n    md.region = ${region:sqlstring}\n    AND md.namespace = ${namespace:sqlstring}\n    AND md.resource_id = ${resource_id:sqlstring}\nGROUP BY\n    md.region,\n    md.namespace,\n    md.resource_id,\n    md.metric_name,\n    md.statistic,\n    md.period_seconds,\n    md.enabled\nORDER BY md.metric_name;",
+          "rawSql": "SELECT\n    md.region,\n    md.namespace,\n    md.resource_id,\n    md.metric_name,\n    md.statistic,\n    md.period_seconds,\n    md.enabled,\n    count(mp.id) AS points,\n    max(mp.timestamp) AS latest_point\nFROM metric_definitions md\nLEFT JOIN metric_points mp\n    ON mp.metric_definition_id = md.id\n    AND $__timeFilter(mp.timestamp)\nWHERE\n    md.region = ${region:sqlstring}\n    AND md.namespace = ${namespace:sqlstring}\n    AND md.resource_id IN (${resource_id:sqlstring})\nGROUP BY\n    md.region,\n    md.namespace,\n    md.resource_id,\n    md.metric_name,\n    md.statistic,\n    md.period_seconds,\n    md.enabled\nORDER BY md.metric_name;",
           "refId": "A"
         }
       ],
@@ -88,7 +88,8 @@
   "tags": [
     "cloud-monitor",
     "aws-resource",
-    "internal"
+    "internal",
+    "admin"
   ],
   "templating": {
     "list": [
@@ -129,19 +130,22 @@
         "type": "query"
       },
       {
-        "current": {},
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
         "datasource": {
           "type": "postgres",
           "uid": "cloud-monitor-postgres"
         },
-        "definition": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND region = ${region:sqlstring} AND namespace = ${namespace:sqlstring} ORDER BY resource_id;",
+        "definition": "SELECT DISTINCT COALESCE(NULLIF(r.display_name, ''), md.resource_id) AS __text, md.resource_id AS __value FROM metric_definitions md JOIN resources r ON r.service_name = md.service_name AND r.resource_id = md.resource_id AND r.region = md.region WHERE md.enabled = TRUE AND md.region = ${region:sqlstring} AND md.namespace = ${namespace:sqlstring} ORDER BY __text;",
         "hide": 0,
-        "includeAll": false,
+        "includeAll": true,
         "label": "Resource",
-        "multi": false,
+        "multi": true,
         "name": "resource_id",
         "options": [],
-        "query": "SELECT DISTINCT resource_id AS __text, resource_id AS __value FROM metric_definitions WHERE enabled = TRUE AND region = ${region:sqlstring} AND namespace = ${namespace:sqlstring} ORDER BY resource_id;",
+        "query": "SELECT DISTINCT COALESCE(NULLIF(r.display_name, ''), md.resource_id) AS __text, md.resource_id AS __value FROM metric_definitions md JOIN resources r ON r.service_name = md.service_name AND r.resource_id = md.resource_id AND r.region = md.region WHERE md.enabled = TRUE AND md.region = ${region:sqlstring} AND md.namespace = ${namespace:sqlstring} ORDER BY __text;",
         "refresh": 1,
         "sort": 1,
         "type": "query"
@@ -152,14 +156,14 @@
           "type": "postgres",
           "uid": "cloud-monitor-postgres"
         },
-        "definition": "SELECT DISTINCT metric_name AS __text, metric_name AS __value FROM metric_definitions WHERE enabled = TRUE AND region = ${region:sqlstring} AND namespace = ${namespace:sqlstring} AND resource_id = ${resource_id:sqlstring} ORDER BY metric_name;",
+        "definition": "SELECT DISTINCT metric_name AS __text, metric_name AS __value FROM metric_definitions WHERE enabled = TRUE AND region = ${region:sqlstring} AND namespace = ${namespace:sqlstring} AND resource_id IN (${resource_id:sqlstring}) ORDER BY metric_name;",
         "hide": 0,
         "includeAll": false,
         "label": "Metric",
         "multi": false,
         "name": "metric_name",
         "options": [],
-        "query": "SELECT DISTINCT metric_name AS __text, metric_name AS __value FROM metric_definitions WHERE enabled = TRUE AND region = ${region:sqlstring} AND namespace = ${namespace:sqlstring} AND resource_id = ${resource_id:sqlstring} ORDER BY metric_name;",
+        "query": "SELECT DISTINCT metric_name AS __text, metric_name AS __value FROM metric_definitions WHERE enabled = TRUE AND region = ${region:sqlstring} AND namespace = ${namespace:sqlstring} AND resource_id IN (${resource_id:sqlstring}) ORDER BY metric_name;",
         "refresh": 1,
         "sort": 1,
         "type": "query"
