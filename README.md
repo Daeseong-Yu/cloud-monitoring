@@ -140,13 +140,17 @@ Provisioning 대상:
 - `grafana/dashboards/cloud-monitor-ses.json`
 - `grafana/dashboards/cloud-monitor-s3.json`
 
+공개용 provisioning 대상:
+
+- `grafana/public-dashboards/cloud-monitor-public-overview.json`
+
 Grafana는 `cloud-monitor-postgres` datasource만 사용합니다.
 
 ## Public Grafana Dashboard
 
 외부 공개 surface는 별도 제품 frontend/API가 아니라 Grafana Public Dashboard입니다. 공개 dashboard는 `public_enabled=true`로 명시한 리소스의 기본 metric만 표시하고, public label 중심으로 series를 구성합니다.
 
-공개 dashboard SQL/view에는 raw resource id, AWS account id, full ARN, raw tags, credential, raw collector error를 포함하지 않습니다.
+공개 dashboard는 `public_grafana_metric_points`, `public_grafana_metric_summary` view만 조회합니다. 공개 dashboard SQL/view에는 raw resource id, AWS account id, full ARN, raw tags, credential, raw collector error를 포함하지 않습니다.
 
 공개 전 확인:
 

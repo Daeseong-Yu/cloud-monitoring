@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -168,24 +167,6 @@ type PublicMetadataInput struct {
 	PublicSortOrder   int32  `json:"publicSortOrder"`
 }
 
-type PublicMetric struct {
-	ID                  string `json:"id"`
-	ResourceAlias       string `json:"resourceAlias"`
-	ResourceLabel       string `json:"resourceLabel"`
-	ResourceDescription string `json:"resourceDescription,omitempty"`
-	MetricAlias         string `json:"metricAlias"`
-	MetricLabel         string `json:"metricLabel"`
-	MetricDescription   string `json:"metricDescription,omitempty"`
-	Unit                string `json:"unit,omitempty"`
-	LatestPointAt       string `json:"latestPointAt,omitempty"`
-	RecentPointCount    int64  `json:"recentPointCount"`
-}
-
-type PublicMetricSeriesPoint struct {
-	Timestamp time.Time `json:"timestamp"`
-	Value     float64   `json:"value"`
-}
-
 type RecommendedMetric struct {
 	MetricName    string `json:"metricName"`
 	Statistic     string `json:"statistic"`
@@ -200,25 +181,6 @@ type RecommendedMetricSetApplyResult struct {
 
 type Store struct {
 	pool *pgxpool.Pool
-}
-
-const publicMetricIDSeparator = "\x1f"
-
-func PublicMetricID(resourceAlias string, metricAlias string) string {
-	payload := strings.TrimSpace(resourceAlias) + publicMetricIDSeparator + strings.TrimSpace(metricAlias)
-	return base64.RawURLEncoding.EncodeToString([]byte(payload))
-}
-
-func publicMetricAliasesFromID(id string) (string, string, error) {
-	data, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(id))
-	if err != nil {
-		return "", "", fmt.Errorf("invalid public metric id")
-	}
-	parts := strings.SplitN(string(data), publicMetricIDSeparator, 2)
-	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
-		return "", "", fmt.Errorf("invalid public metric id")
-	}
-	return parts[0], parts[1], nil
 }
 
 func Connect(ctx context.Context, databaseURL string) (*Store, error) {
@@ -687,102 +649,6 @@ WHERE id = $1`,
 		return fmt.Errorf("resource not found")
 	}
 	return nil
-}
-
-func (s *Store) ListPublicMetrics(ctx context.Context) ([]PublicMetric, error) {
-	const query = `
-SELECT
-    r.public_label AS resource_alias,
-    COALESCE(NULLIF(r.public_display_name, ''), r.public_label) AS resource_label,
-    r.public_description AS resource_description,
-    md.public_label AS metric_alias,
-    COALESCE(NULLIF(md.public_display_name, ''), md.public_label) AS metric_label,
-    md.public_description AS metric_description,
-    COALESCE(md.unit, '') AS unit,
-    COALESCE(mcs.latest_point_at::text, '') AS latest_point_at,
-    COALESCE(mcs.recent_point_count, 0) AS recent_point_count
-FROM resources r
-JOIN metric_definitions md
-    ON md.resource_id = r.resource_id
-    AND md.region = r.region
-LEFT JOIN metric_collection_status mcs
-    ON mcs.metric_definition_id = md.id
-WHERE r.public_enabled = TRUE
-  AND md.public_enabled = TRUE
-  AND md.enabled = TRUE
-  AND r.public_label <> ''
-  AND md.public_label <> ''
-ORDER BY r.public_sort_order, r.public_label, md.public_sort_order, md.public_label`
-
-	rows, err := s.pool.Query(ctx, query)
-	if err != nil {
-		return nil, fmt.Errorf("query public metrics: %w", err)
-	}
-	defer rows.Close()
-
-	metrics := []PublicMetric{}
-	for rows.Next() {
-		var metric PublicMetric
-		if err := rows.Scan(
-			&metric.ResourceAlias,
-			&metric.ResourceLabel,
-			&metric.ResourceDescription,
-			&metric.MetricAlias,
-			&metric.MetricLabel,
-			&metric.MetricDescription,
-			&metric.Unit,
-			&metric.LatestPointAt,
-			&metric.RecentPointCount,
-		); err != nil {
-			return nil, fmt.Errorf("scan public metric: %w", err)
-		}
-		metric.ID = PublicMetricID(metric.ResourceAlias, metric.MetricAlias)
-		metrics = append(metrics, metric)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate public metrics: %w", err)
-	}
-	return metrics, nil
-}
-
-func (s *Store) ListPublicMetricSeries(ctx context.Context, publicMetricID string, limit int32) ([]PublicMetricSeriesPoint, error) {
-	resourceAlias, metricAlias, err := publicMetricAliasesFromID(publicMetricID)
-	if err != nil {
-		return nil, err
-	}
-	if limit <= 0 {
-		limit = 288
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-
-	const query = `
-SELECT mp.timestamp, mp.value
-FROM metric_points mp
-JOIN metric_definitions md ON md.id = mp.metric_definition_id
-JOIN resources r
-    ON r.resource_id = md.resource_id
-    AND r.region = md.region
-WHERE r.public_enabled = TRUE
-  AND md.public_enabled = TRUE
-  AND md.enabled = TRUE
-  AND r.public_label = $1
-  AND md.public_label = $2
-ORDER BY mp.timestamp DESC
-LIMIT $3`
-
-	rows, err := s.pool.Query(ctx, query, resourceAlias, metricAlias, limit)
-	if err != nil {
-		return nil, fmt.Errorf("query public metric series: %w", err)
-	}
-	defer rows.Close()
-
-	points, err := pgx.CollectRows(rows, pgx.RowToStructByPos[PublicMetricSeriesPoint])
-	if err != nil {
-		return nil, fmt.Errorf("scan public metric series: %w", err)
-	}
-	return points, nil
 }
 
 func (s *Store) ListAdminMetricDefinitions(ctx context.Context, region string) ([]AdminMetricDefinition, error) {

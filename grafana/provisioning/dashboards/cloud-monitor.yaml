@@ -10,3 +10,12 @@ providers:
     updateIntervalSeconds: 600
     options:
       path: /var/lib/grafana/dashboards/cloud-monitor
+  - name: Cloud Monitor Public
+    orgId: 1
+    folder: Cloud Monitor Public
+    type: file
+    disableDeletion: false
+    allowUiUpdates: false
+    updateIntervalSeconds: 600
+    options:
+      path: /var/lib/grafana/dashboards/cloud-monitor-public

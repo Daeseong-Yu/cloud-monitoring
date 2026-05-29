@@ -19,6 +19,7 @@ json_files="
   grafana/dashboards/cloud-monitor-amplify.json
   grafana/dashboards/cloud-monitor-ses.json
   grafana/dashboards/cloud-monitor-s3.json
+  grafana/public-dashboards/cloud-monitor-public-overview.json
 "
 
 for optional_json in \

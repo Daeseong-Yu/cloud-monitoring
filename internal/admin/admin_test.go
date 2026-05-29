@@ -2,12 +2,10 @@ package admin
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"cloud-monitor/internal/store"
 )
@@ -20,7 +18,6 @@ type fakeStore struct {
 	selectedMetric   bool
 	resourcePublic   store.PublicMetadataInput
 	metricPublic     store.PublicMetadataInput
-	publicMetrics    []store.PublicMetric
 	bulkSelected     int64
 	bulkEnabled      bool
 	bulkUpdated      int64
@@ -94,31 +91,6 @@ func (s *fakeStore) CollectionCostEstimate(context.Context, string, int64) (stor
 	}, nil
 }
 
-func (s *fakeStore) ListPublicMetrics(context.Context) ([]store.PublicMetric, error) {
-	if s.publicMetrics != nil {
-		return s.publicMetrics, nil
-	}
-	return []store.PublicMetric{{
-		ID:                  store.PublicMetricID("orders", "errors"),
-		ResourceAlias:       "orders",
-		ResourceLabel:       "Orders API",
-		ResourceDescription: "Public request processing",
-		MetricAlias:         "errors",
-		MetricLabel:         "Errors",
-		MetricDescription:   "Failed requests",
-		Unit:                "Count",
-		LatestPointAt:       "2026-05-28 12:00:00+00",
-		RecentPointCount:    12,
-	}}, nil
-}
-
-func (s *fakeStore) ListPublicMetricSeries(context.Context, string, int32) ([]store.PublicMetricSeriesPoint, error) {
-	return []store.PublicMetricSeriesPoint{{
-		Timestamp: time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC),
-		Value:     3,
-	}}, nil
-}
-
 func (s *fakeStore) ListAdminMetricDefinitions(context.Context, string) ([]store.AdminMetricDefinition, error) {
 	return nil, nil
 }
@@ -181,117 +153,27 @@ func TestAdminRequiresBasicAuth(t *testing.T) {
 	}
 }
 
-func TestPublicMetricsDoNotRequireBasicAuth(t *testing.T) {
+func TestPublicPortfolioRoutesAreNotUnauthenticatedAdminSurface(t *testing.T) {
 	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
 	}
 
-	request := httptest.NewRequest(http.MethodGet, "/api/public/metrics", nil)
-	response := httptest.NewRecorder()
-	server.Handler().ServeHTTP(response, request)
+	for _, path := range []string{"/public/overview", "/api/public/metrics", "/api/public/metrics/example/series"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	for _, forbidden := range []string{"resourceId", "accountId", "arn", "tags", "sanitizedError", "i-0123456789", "123456789012", "AWS/Lambda"} {
-		if strings.Contains(body, forbidden) {
-			t.Fatalf("public response exposes forbidden identifier %q: %s", forbidden, body)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("%s status = %d, want 401", path, response.Code)
 		}
-	}
-	if !strings.Contains(body, "resourceAlias") || !strings.Contains(body, "metricAlias") {
-		t.Fatalf("public response does not include aliases: %s", body)
-	}
-}
 
-func TestPublicMetricsEmptyResponseIsArray(t *testing.T) {
-	server, err := NewServer(Config{Store: &fakeStore{publicMetrics: []store.PublicMetric{}}, Username: "admin", Password: "secret", Region: "us-east-1"})
-	if err != nil {
-		t.Fatalf("new server: %v", err)
-	}
-
-	request := httptest.NewRequest(http.MethodGet, "/api/public/metrics", nil)
-	response := httptest.NewRecorder()
-	server.Handler().ServeHTTP(response, request)
-
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
-	}
-	if strings.TrimSpace(response.Body.String()) != "[]" {
-		t.Fatalf("body = %s, want []", response.Body.String())
-	}
-}
-
-func TestPublicOverviewUsesPublicAPIOnly(t *testing.T) {
-	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
-	if err != nil {
-		t.Fatalf("new server: %v", err)
-	}
-
-	request := httptest.NewRequest(http.MethodGet, "/public/overview", nil)
-	response := httptest.NewRecorder()
-	server.Handler().ServeHTTP(response, request)
-
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	if !strings.Contains(response.Header().Get("Content-Type"), "text/html") {
-		t.Fatalf("content type = %q, want text/html", response.Header().Get("Content-Type"))
-	}
-	for _, expected := range []string{"Cloud Monitor Portfolio", "/api/public/metrics", "/series"} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("public overview does not include %q: %s", expected, body)
-		}
-	}
-	for _, forbidden := range []string{"/admin", "Discovery 실행", "metric-candidates", "metric-definitions", "resourceId", "accountId", "sanitizedError"} {
-		if strings.Contains(body, forbidden) {
-			t.Fatalf("public overview exposes admin or internal field %q: %s", forbidden, body)
-		}
-	}
-}
-
-func TestPublicMetricSeriesIsReadOnly(t *testing.T) {
-	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
-	if err != nil {
-		t.Fatalf("new server: %v", err)
-	}
-
-	id := store.PublicMetricID("orders", "errors")
-	request := httptest.NewRequest(http.MethodPost, "/api/public/metrics/"+id+"/series", nil)
-	response := httptest.NewRecorder()
-	server.Handler().ServeHTTP(response, request)
-
-	if response.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("status = %d, want 405", response.Code)
-	}
-}
-
-func TestPublicMetricSeriesReturnsOnlyPoints(t *testing.T) {
-	server, err := NewServer(Config{Store: &fakeStore{}, Username: "admin", Password: "secret", Region: "us-east-1"})
-	if err != nil {
-		t.Fatalf("new server: %v", err)
-	}
-
-	id := store.PublicMetricID("orders", "errors")
-	request := httptest.NewRequest(http.MethodGet, "/api/public/metrics/"+id+"/series?limit=10", nil)
-	response := httptest.NewRecorder()
-	server.Handler().ServeHTTP(response, request)
-
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode public series response: %v", err)
-	}
-	if _, ok := payload["points"]; !ok {
-		t.Fatalf("series response does not include points: %s", response.Body.String())
-	}
-	for _, forbidden := range []string{"resourceId", "accountId", "arn", "tags", "sanitizedError"} {
-		if strings.Contains(response.Body.String(), forbidden) {
-			t.Fatalf("public series exposes forbidden identifier %q: %s", forbidden, response.Body.String())
+		request = httptest.NewRequest(http.MethodGet, path, nil)
+		request.SetBasicAuth("admin", "secret")
+		response = httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Fatalf("%s authenticated status = %d, want 404", path, response.Code)
 		}
 	}
 }

@@ -1,38 +1,66 @@
 #!/bin/sh
 set -eu
 
-grep -q 'ListPublicMetrics' internal/store/store.go
-grep -q 'ListPublicMetricSeries' internal/store/store.go
-grep -q 'PublicMetricID' internal/store/store.go
-grep -q 'base64.RawURLEncoding' internal/store/store.go
-grep -q 'r.public_enabled = TRUE' internal/store/store.go
-grep -q 'md.public_enabled = TRUE' internal/store/store.go
-grep -q 'md.enabled = TRUE' internal/store/store.go
+migration="db/migrations/006_public_grafana_dashboard.sql"
+dashboard="grafana/public-dashboards/cloud-monitor-public-overview.json"
+provider="grafana/provisioning/dashboards/cloud-monitor.yaml"
 
-grep -q 'HandleFunc("/public/overview"' internal/admin/admin.go
-grep -q 'HandleFunc("/api/public/metrics"' internal/admin/admin.go
-grep -q 'HandleFunc("/api/public/metrics/"' internal/admin/admin.go
-grep -q 'handleAPIPublicMetricSeries' internal/admin/admin.go
-grep -q 'root.Handle("/", s.basicAuth(adminMux))' internal/admin/admin.go
+test -f "$migration"
+test -f "$dashboard"
 
-grep -q 'TestPublicMetricsDoNotRequireBasicAuth' internal/admin/admin_test.go
-grep -q 'TestPublicMetricSeriesIsReadOnly' internal/admin/admin_test.go
-grep -q 'TestPublicMetricIDUsesPublicAliasesOnly' internal/store/store_test.go
+grep -q 'CREATE OR REPLACE VIEW public_grafana_default_metric_catalog' "$migration"
+grep -q 'CREATE OR REPLACE VIEW public_grafana_metric_summary' "$migration"
+grep -q 'CREATE OR REPLACE VIEW public_grafana_metric_points' "$migration"
+grep -q 'JOIN public_grafana_default_metric_catalog catalog' "$migration"
+grep -q 'r.public_enabled = TRUE' "$migration"
+grep -q 'r.enabled = TRUE' "$migration"
+grep -q 'md.public_enabled = TRUE' "$migration"
+grep -q 'md.enabled = TRUE' "$migration"
+grep -q "r.public_label <> ''" "$migration"
+grep -q "md.public_label <> ''" "$migration"
 
-grep -q 'GET /api/public/metrics' README.md
-grep -q 'raw resource id, AWS account id, full ARN, raw tags, credential, raw collector error' README.md
-
-if grep -nE 'json:"(resourceId|accountId|arn|tags|sanitizedError)"' internal/store/store.go | grep -E 'PublicMetric|PublicMetricSeries' >/dev/null; then
-  echo "Public response types must not expose internal identifiers or raw diagnostics." >&2
+public_view_select="$(sed -n '/CREATE OR REPLACE VIEW public_grafana_metric_points/,/FROM metric_points mp/p' "$migration")"
+if printf '%s\n' "$public_view_select" | grep -E 'resource_id|account_id|arn|tags|sanitized_error|dimensions|namespace' >/dev/null; then
+  echo "Public Grafana view output must not expose raw identifiers or diagnostics." >&2
   exit 1
 fi
 
-if grep -nE '/api/public/metrics|/public/overview' internal/admin/admin.go | grep -q 'Set|Update|Delete|Upsert|Apply'; then
-  echo "Public API handlers must stay read-only." >&2
+jq -e '.uid == "cloud-monitor-public-overview"' "$dashboard" >/dev/null
+jq -e '.editable == false' "$dashboard" >/dev/null
+jq -e '(.tags // []) | index("public") and index("cloud-monitor")' "$dashboard" >/dev/null
+jq -e '(.templating.list // []) | length == 0' "$dashboard" >/dev/null
+jq -e '.refresh | test("^[0-9]+m$") and (. | sub("m$"; "") | tonumber) >= 10' "$dashboard" >/dev/null
+jq -e '.time.from == "now-24h"' "$dashboard" >/dev/null
+jq -e 'all(.panels[]; .datasource.type == "postgres" and .datasource.uid == "cloud-monitor-postgres")' "$dashboard" >/dev/null
+jq -e 'all(.panels[].targets[]?; .datasource.type == "postgres" and .datasource.uid == "cloud-monitor-postgres")' "$dashboard" >/dev/null
+jq -e 'all(.panels[].targets[]?; (.rawSql | contains("public_grafana_metric_")))' "$dashboard" >/dev/null
+
+dashboard_sql="$(jq -r '.panels[].targets[]?.rawSql // empty' "$dashboard")"
+if printf '%s\n' "$dashboard_sql" | grep -E '\$\{|(^|[^A-Za-z0-9_])metric_points([^A-Za-z0-9_]|$)|metric_definitions|(^|[^A-Za-z0-9_])resources([^A-Za-z0-9_]|$)|resource_id|account_id|arn|tags|sanitized_error|dimensions|namespace|AWS/' >/dev/null; then
+  echo "Public Grafana dashboard must query public-safe views only." >&2
   exit 1
 fi
 
-GOCACHE="${GOCACHE:-$(pwd)/.cache/go-build}" go test ./internal/store ./internal/admin
+grep -q 'Cloud Monitor Public' "$provider"
+grep -q 'allowUiUpdates: false' "$provider"
+grep -q '/var/lib/grafana/dashboards/cloud-monitor-public' "$provider"
+grep -q './grafana/public-dashboards:/var/lib/grafana/dashboards/cloud-monitor-public:ro' docker-compose.yml
+
+if grep -nE 'HandleFunc\("/public/overview"|HandleFunc\("/api/public/metrics"|root.Handle\("/public/overview"|root.Handle\("/api/public/metrics"' internal/admin/admin.go >/dev/null; then
+  echo "Admin UI must not expose legacy public portfolio API/UI routes." >&2
+  exit 1
+fi
+
+if grep -nE 'fetch\("/api/public/metrics"|Cloud Monitor Portfolio|publicPageTemplate' internal/admin/admin.go >/dev/null; then
+  echo "Legacy public portfolio UI implementation remains in Admin UI." >&2
+  exit 1
+fi
+
+grep -q 'public_grafana_metric_points' README.md
+grep -q 'grafana/public-dashboards/cloud-monitor-public-overview.json' README.md
+grep -q 'Grafana Public Dashboard' README.md
+
+GOCACHE="${GOCACHE:-$(pwd)/.cache/go-build}" go test ./internal/admin ./internal/store
 
 sh scripts/validate-common.sh
 

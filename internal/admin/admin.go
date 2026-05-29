@@ -17,8 +17,6 @@ type Store interface {
 	ListAdminResources(context.Context, string) ([]store.AdminResource, error)
 	ListAdminMetricCandidates(context.Context, string) ([]store.AdminMetricCandidate, error)
 	CollectionCostEstimate(context.Context, string, int64) (store.CollectionCostEstimate, error)
-	ListPublicMetrics(context.Context) ([]store.PublicMetric, error)
-	ListPublicMetricSeries(context.Context, string, int32) ([]store.PublicMetricSeriesPoint, error)
 	GetAdminResource(context.Context, int64) (store.AdminResource, error)
 	SetResourceEnabled(context.Context, int64, bool) error
 	SetResourcesEnabled(context.Context, string, string, bool) (int64, error)
@@ -93,16 +91,11 @@ func NewServer(cfg Config) (*Server, error) {
 		region:     region,
 		interval:   interval,
 		metricSets: cfg.MetricSets,
-		templates:  template.Must(template.New("admin").Parse(pageTemplate + publicPageTemplate)),
+		templates:  template.Must(template.New("admin").Parse(pageTemplate)),
 	}, nil
 }
 
 func (s *Server) Handler() http.Handler {
-	publicMux := http.NewServeMux()
-	publicMux.HandleFunc("/public/overview", s.handlePublicOverview)
-	publicMux.HandleFunc("/api/public/metrics", s.handleAPIPublicMetrics)
-	publicMux.HandleFunc("/api/public/metrics/", s.handleAPIPublicMetricSeries)
-
 	adminMux := http.NewServeMux()
 	adminMux.HandleFunc("/", s.redirectRoot)
 	adminMux.HandleFunc("/admin", s.handleAdmin)
@@ -129,9 +122,6 @@ func (s *Server) Handler() http.Handler {
 	adminMux.HandleFunc("/api/metric-definitions/", s.handleAPIMetricDefinitionAction)
 
 	root := http.NewServeMux()
-	root.Handle("/public/overview", publicMux)
-	root.Handle("/api/public/metrics", publicMux)
-	root.Handle("/api/public/metrics/", publicMux)
 	root.Handle("/", s.basicAuth(adminMux))
 	return root
 }
@@ -187,69 +177,6 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if err := s.templates.ExecuteTemplate(w, "page", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func (s *Server) handlePublicOverview(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.templates.ExecuteTemplate(w, "public", nil); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-func (s *Server) handleAPIPublicMetrics(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/api/public/metrics" {
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w)
-		return
-	}
-	metrics, err := s.store.ListPublicMetrics(r.Context())
-	if err != nil {
-		http.Error(w, "public metrics are unavailable", http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, metrics)
-}
-
-func (s *Server) handleAPIPublicMetricSeries(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w)
-		return
-	}
-	id, ok := strings.CutPrefix(strings.Trim(r.URL.Path, "/"), "api/public/metrics/")
-	if !ok {
-		http.NotFound(w, r)
-		return
-	}
-	id, ok = strings.CutSuffix(id, "/series")
-	if !ok || strings.TrimSpace(id) == "" || strings.Contains(id, "/") {
-		http.NotFound(w, r)
-		return
-	}
-	limit := int32(288)
-	if value := strings.TrimSpace(r.URL.Query().Get("limit")); value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 32)
-		if err != nil || parsed <= 0 {
-			http.Error(w, "limit must be a positive number", http.StatusBadRequest)
-			return
-		}
-		limit = int32(parsed)
-	}
-	points, err := s.store.ListPublicMetricSeries(r.Context(), id, limit)
-	if err != nil {
-		http.Error(w, "public metric series is unavailable", http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]any{
-		"id":     id,
-		"points": points,
-	})
 }
 
 func (s *Server) dashboardData(ctx context.Context, region string) ([]store.AdminService, []store.AdminResource, []store.AdminMetricCandidate, []store.AdminMetricDefinition, store.CollectionCostEstimate, error) {
@@ -1229,166 +1156,5 @@ const pageTemplate = `{{define "page"}}<!doctype html>
       </details>
     </section>
   </main>
-</body>
-</html>{{end}}`
-
-const publicPageTemplate = `{{define "public"}}<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cloud Monitor Portfolio</title>
-  <style>
-    :root { color-scheme: light; --ink: #16202a; --muted: #526170; --line: #d7e0e8; --panel: #ffffff; --wash: #f3f7fa; --accent: #25636f; --accent-2: #6f4f1f; }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--wash); }
-    header { background: #ffffff; border-bottom: 1px solid var(--line); }
-    .wrap { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
-    .top { min-height: 150px; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 36px 0 28px; }
-    h1 { margin: 0; font-size: 34px; line-height: 1.05; letter-spacing: 0; }
-    .summary { color: var(--muted); margin-top: 10px; max-width: 640px; line-height: 1.55; }
-    .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: #fff; padding: 8px 10px; font-size: 13px; color: var(--muted); }
-    main { padding: 26px 0 42px; }
-    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
-    .metric-count { font-size: 14px; color: var(--muted); }
-    button { appearance: none; border: 1px solid var(--accent); background: var(--accent); color: white; border-radius: 6px; padding: 8px 11px; font: inherit; cursor: pointer; }
-    button.secondary { background: #fff; color: var(--accent); }
-    button:disabled { cursor: default; opacity: .6; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: stretch; }
-    article { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; min-height: 190px; display: flex; flex-direction: column; gap: 14px; }
-    .resource { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; }
-    h2 { margin: 0; font-size: 18px; line-height: 1.25; letter-spacing: 0; }
-    .alias { color: var(--accent-2); font-size: 13px; white-space: nowrap; }
-    .metric { margin: 0; color: var(--muted); line-height: 1.45; }
-    .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: auto; }
-    .meta div { border-top: 1px solid var(--line); padding-top: 8px; min-width: 0; }
-    .label { display: block; font-size: 12px; color: var(--muted); }
-    .value { display: block; margin-top: 2px; font-weight: 650; overflow-wrap: anywhere; }
-    .series { width: 100%; min-height: 56px; border: 1px solid var(--line); background: #f8fafc; padding: 8px; font-size: 12px; color: var(--muted); overflow: auto; }
-    .empty, .error { border: 1px solid var(--line); background: #fff; padding: 18px; color: var(--muted); }
-    .error { border-color: #c56b6b; color: #8a2f2f; }
-    @media (max-width: 640px) {
-      .top, .toolbar { align-items: flex-start; flex-direction: column; }
-      h1 { font-size: 28px; }
-      .wrap { width: min(100% - 24px, 1120px); }
-    }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="wrap top">
-      <div>
-        <h1>Cloud Monitor Portfolio</h1>
-        <p class="summary">Public aliases expose selected service health signals without operational identifiers.</p>
-      </div>
-      <span class="pill" id="updated-at">Loading</span>
-    </div>
-  </header>
-  <main class="wrap">
-    <div class="toolbar">
-      <span class="metric-count" id="metric-count">0 metrics</span>
-      <button type="button" class="secondary" id="refresh">Refresh</button>
-    </div>
-    <section class="grid" id="metrics" aria-live="polite"></section>
-  </main>
-  <script>
-    const forbiddenKeys = ["resource" + "Id", "account" + "Id", "a" + "rn", "ta" + "gs", "sanitized" + "Error", "name" + "space", "re" + "gion"];
-    const metricsEl = document.querySelector("#metrics");
-    const countEl = document.querySelector("#metric-count");
-    const updatedEl = document.querySelector("#updated-at");
-    const refreshEl = document.querySelector("#refresh");
-
-    function text(value) {
-      return value === undefined || value === null || value === "" ? "-" : String(value);
-    }
-
-    function assertPublicPayload(value) {
-      const encoded = JSON.stringify(value);
-      for (const key of forbiddenKeys) {
-        if (encoded.includes("\"" + key + "\"")) {
-          throw new Error("public payload contains an internal field");
-        }
-      }
-    }
-
-    async function loadSeries(metric) {
-      const response = await fetch("/api/public/metrics/" + encodeURIComponent(metric.id) + "/series?limit=12", { headers: { "Accept": "application/json" } });
-      if (!response.ok) {
-        return [];
-      }
-      const payload = await response.json();
-      assertPublicPayload(payload);
-      return Array.isArray(payload.points) ? payload.points : [];
-    }
-
-    function renderSeries(points) {
-      if (!points.length) {
-        return "No recent points";
-      }
-      return points.slice().reverse().map((point) => {
-        const time = new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-        return time + " " + Number(point.value).toLocaleString();
-      }).join(" | ");
-    }
-
-	    function card(metric) {
-	      const el = document.createElement("article");
-	      el.innerHTML = ""
-	        + "<div class=\"resource\">"
-	        + "<div><h2></h2><p class=\"metric\"></p></div>"
-	        + "<span class=\"alias\"></span>"
-	        + "</div>"
-	        + "<div class=\"series\">Loading series</div>"
-	        + "<div class=\"meta\">"
-	        + "<div><span class=\"label\">Metric</span><span class=\"value metric-label\"></span></div>"
-	        + "<div><span class=\"label\">Unit</span><span class=\"value unit\"></span></div>"
-	        + "<div><span class=\"label\">Latest</span><span class=\"value latest\"></span></div>"
-	        + "<div><span class=\"label\">Recent points</span><span class=\"value points\"></span></div>"
-	        + "</div>";
-      el.querySelector("h2").textContent = text(metric.resourceLabel);
-      el.querySelector(".metric").textContent = text(metric.resourceDescription);
-      el.querySelector(".alias").textContent = text(metric.resourceAlias);
-      el.querySelector(".metric-label").textContent = text(metric.metricLabel);
-      el.querySelector(".unit").textContent = text(metric.unit);
-      el.querySelector(".latest").textContent = text(metric.latestPointAt);
-      el.querySelector(".points").textContent = text(metric.recentPointCount);
-      loadSeries(metric).then((points) => {
-        el.querySelector(".series").textContent = renderSeries(points);
-      }).catch(() => {
-        el.querySelector(".series").textContent = "Series unavailable";
-      });
-      return el;
-    }
-
-    async function loadMetrics() {
-      refreshEl.disabled = true;
-      metricsEl.innerHTML = "";
-      try {
-        const response = await fetch("/api/public/metrics", { headers: { "Accept": "application/json" } });
-        if (!response.ok) {
-          throw new Error("metrics unavailable");
-        }
-        const metrics = await response.json();
-        assertPublicPayload(metrics);
-	        countEl.textContent = metrics.length + (metrics.length === 1 ? " metric" : " metrics");
-	        updatedEl.textContent = new Date().toLocaleString();
-	        if (!metrics.length) {
-	          metricsEl.innerHTML = "<div class=\"empty\">No public metrics</div>";
-	          return;
-	        }
-        for (const metric of metrics) {
-          metricsEl.appendChild(card(metric));
-        }
-	      } catch (error) {
-	        countEl.textContent = "0 metrics";
-	        metricsEl.innerHTML = "<div class=\"error\">Public metrics unavailable</div>";
-	      } finally {
-        refreshEl.disabled = false;
-      }
-    }
-
-    refreshEl.addEventListener("click", loadMetrics);
-    loadMetrics();
-  </script>
 </body>
 </html>{{end}}`
