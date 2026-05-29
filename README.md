@@ -118,6 +118,12 @@ docker compose exec postgres psql -U "${POSTGRES_USER:-cloud_monitor}" \
   -c "select count(*) from metric_definitions where enabled = true; select count(*) from metric_points;"
 ```
 
+## CI/CD
+
+`main` branch에 push하면 `Cloud Monitor CI`가 자동으로 실행됩니다. CI가 성공하면 `Cloud Monitor Deploy`가 `workflow_run`으로 이어서 실행되어 같은 commit SHA를 운영 서버에 SSH source deploy합니다.
+
+필요하면 GitHub Actions에서 `Cloud Monitor Deploy`를 수동 실행하고 `ref`에 branch, tag, 또는 commit을 지정할 수 있습니다.
+
 ## Grafana Dashboards
 
 Grafana dashboard는 관리자용과 공개용으로 나눕니다.

@@ -11,6 +11,12 @@ sh -n scripts/deploy-production.sh
 sh -n scripts/rollback-production.sh
 
 grep -q 'workflow_dispatch' .github/workflows/deploy.yml
+grep -Fq 'workflow_run:' .github/workflows/deploy.yml
+grep -Fq 'workflows: ["Cloud Monitor CI"]' .github/workflows/deploy.yml
+grep -Fq 'types: [completed]' .github/workflows/deploy.yml
+grep -Fq 'branches: [main]' .github/workflows/deploy.yml
+grep -q "github.event.workflow_run.conclusion == 'success'" .github/workflows/deploy.yml
+grep -q 'github.event.workflow_run.head_sha' .github/workflows/deploy.yml
 grep -q 'DEPLOY_SSH_KEY' .github/workflows/deploy.yml
 grep -q 'DEPLOY_PATH' .github/workflows/deploy.yml
 grep -q 'production-deploy' .github/workflows/deploy.yml

@@ -1,5 +1,5 @@
 name: Cloud Monitor Deploy
-run-name: Deploy production • ${{ inputs.ref }} • @${{ github.actor }}
+run-name: Deploy production • ${{ github.event.inputs.ref || github.event.workflow_run.head_branch || github.ref_name }} • @${{ github.actor }}
 
 on:
   workflow_dispatch:
@@ -9,6 +9,10 @@ on:
         required: true
         default: main
         type: string
+  workflow_run:
+    workflows: ["Cloud Monitor CI"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -20,6 +24,7 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to production server
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -27,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.event.inputs.ref || github.event.workflow_run.head_sha }}
 
       - name: Resolve deploy revision
         id: revision
@@ -35,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          deploy_ref="${{ inputs.ref }}"
+          deploy_ref="${{ github.event.inputs.ref || github.event.workflow_run.head_sha }}"
           case "$deploy_ref" in
             -*|''|*[!A-Za-z0-9._/@-]*)
               echo "Unsupported deploy ref: $deploy_ref" >&2
@@ -105,7 +110,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
-          DEPLOY_REF: ${{ inputs.ref }}
+          DEPLOY_REF: ${{ github.event.inputs.ref || github.event.workflow_run.head_sha }}
           DEPLOY_SHA: ${{ steps.revision.outputs.sha }}
         run: |
           set -euo pipefail
